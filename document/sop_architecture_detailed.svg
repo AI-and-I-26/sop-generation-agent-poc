@@ -1,0 +1,241 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1200">
+  <defs>
+    <style>
+      .title { font: bold 26px sans-serif; fill: #1F4788; }
+      .subtitle { font: bold 18px sans-serif; fill: #2E5C8A; }
+      .label { font: 14px sans-serif; fill: #333; }
+      .small-label { font: 12px sans-serif; fill: #555; }
+      .tiny-label { font: 10px sans-serif; fill: #666; }
+      .agent-box { fill: #E3F2FD; stroke: #1976D2; stroke-width: 2; }
+      .supervisor-box { fill: #FFF9C4; stroke: #F57C00; stroke-width: 3; }
+      .tool-box { fill: #F1F8E9; stroke: #689F38; stroke-width: 2; }
+      .storage-box { fill: #FCE4EC; stroke: #C2185B; stroke-width: 2; }
+      .bedrock-box { fill: #FFE0B2; stroke: #E65100; stroke-width: 2; }
+      .arrow { fill: none; stroke: #424242; stroke-width: 2; marker-end: url(#arrowhead); }
+      .data-arrow { fill: none; stroke: #1976D2; stroke-width: 2; stroke-dasharray: 5,5; marker-end: url(#dataarrow); }
+      .thick-arrow { fill: none; stroke: #E65100; stroke-width: 3; marker-end: url(#thickarrow); }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#424242" />
+    </marker>
+    <marker id="dataarrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#1976D2" />
+    </marker>
+    <marker id="thickarrow" markerWidth="12" markerHeight="12" refX="10" refY="3" orient="auto">
+      <polygon points="0 0, 12 3, 0 6" fill="#E65100" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="800" y="30" class="title" text-anchor="middle">Multi-Agent SOP Generation System Architecture</text>
+  <text x="800" y="52" class="subtitle" text-anchor="middle">AWS Bedrock + Llama 3.1 + Strand Framework + RAG</text>
+
+  <!-- User Input / API Gateway -->
+  <rect x="650" y="80" width="300" height="70" rx="8" fill="#E8EAF6" stroke="#3F51B5" stroke-width="2"/>
+  <text x="800" y="105" class="label" text-anchor="middle" font-weight="bold">API Gateway / User Input</text>
+  <text x="800" y="125" class="small-label" text-anchor="middle">POST /generate-sop</text>
+  <text x="800" y="140" class="tiny-label" text-anchor="middle">{ topic, industry, audience, requirements }</text>
+
+  <!-- Arrow to Supervisor -->
+  <path d="M 800 150 L 800 200" class="arrow"/>
+
+  <!-- Supervisor Agent -->
+  <rect x="630" y="200" width="340" height="100" rx="10" class="supervisor-box"/>
+  <text x="800" y="230" class="label" text-anchor="middle" font-weight="bold">Supervisor Agent (Orchestrator)</text>
+  <text x="800" y="250" class="small-label" text-anchor="middle">• Manages workflow state machine</text>
+  <text x="800" y="265" class="small-label" text-anchor="middle">• Routes between specialized agents</text>
+  <text x="800" y="280" class="small-label" text-anchor="middle">• Implements retry logic &amp; error handling</text>
+  <text x="800" y="295" class="tiny-label" text-anchor="middle">Framework: Strand Graph | Model: Llama 3.1 70B</text>
+
+  <!-- Agent Execution Layer Container -->
+  <rect x="30" y="330" width="1540" height="380" rx="8" fill="#FAFAFA" stroke="#9E9E9E" stroke-width="2" stroke-dasharray="8,4"/>
+  <text x="50" y="360" class="subtitle">Agent Execution Layer (Strand Graph Nodes)</text>
+
+  <!-- 1. Planning Agent -->
+  <rect x="60" y="380" width="280" height="130" rx="6" class="agent-box"/>
+  <text x="200" y="405" class="label" text-anchor="middle" font-weight="bold">1. Planning Agent</text>
+  <text x="70" y="425" class="small-label">Responsibilities:</text>
+  <text x="80" y="442" class="tiny-label">• Analyze SOP requirements</text>
+  <text x="80" y="457" class="tiny-label">• Create hierarchical outline</text>
+  <text x="80" y="472" class="tiny-label">• Define section structure</text>
+  <text x="80" y="487" class="tiny-label">• Output: JSON schema outline</text>
+  <text x="200" y="502" class="tiny-label" font-weight="bold">Model: Llama 3.1 70B | Temp: 0.7</text>
+
+  <!-- 2. Research Agent -->
+  <rect x="370" y="380" width="280" height="130" rx="6" class="agent-box"/>
+  <text x="510" y="405" class="label" text-anchor="middle" font-weight="bold">2. Research Agent (RAG)</text>
+  <text x="380" y="425" class="small-label">Responsibilities:</text>
+  <text x="390" y="442" class="tiny-label">• Query Bedrock Knowledge Base</text>
+  <text x="390" y="457" class="tiny-label">• Retrieve existing SOPs</text>
+  <text x="390" y="472" class="tiny-label">• Fetch compliance requirements</text>
+  <text x="390" y="487" class="tiny-label">• Tools: RAG, Search, Compliance API</text>
+  <text x="510" y="502" class="tiny-label" font-weight="bold">Model: Llama 3.1 70B | Temp: 0.5</text>
+
+  <!-- 3. Content Generation Agent -->
+  <rect x="680" y="380" width="280" height="130" rx="6" class="agent-box"/>
+  <text x="820" y="405" class="label" text-anchor="middle" font-weight="bold">3. Content Generation Agent</text>
+  <text x="690" y="425" class="small-label">Responsibilities:</text>
+  <text x="700" y="442" class="tiny-label">• Generate procedure steps</text>
+  <text x="700" y="457" class="tiny-label">• Write safety guidelines</text>
+  <text x="700" y="472" class="tiny-label">• Create troubleshooting sections</text>
+  <text x="700" y="487" class="tiny-label">• Schema enforcement: JSON mode</text>
+  <text x="820" y="502" class="tiny-label" font-weight="bold">Model: Llama 3.1 70B | Temp: 0.8</text>
+
+  <!-- 4. Formatting Agent -->
+  <rect x="990" y="380" width="280" height="130" rx="6" class="agent-box"/>
+  <text x="1130" y="405" class="label" text-anchor="middle" font-weight="bold">4. Formatting Agent</text>
+  <text x="1000" y="425" class="small-label">Responsibilities:</text>
+  <text x="1010" y="442" class="tiny-label">• Apply document templates</text>
+  <text x="1010" y="457" class="tiny-label">• Add numbering &amp; headers</text>
+  <text x="1010" y="472" class="tiny-label">• Insert tables/diagrams</text>
+  <text x="1010" y="487" class="tiny-label">• Output: Markdown/DOCX</text>
+  <text x="1130" y="502" class="tiny-label" font-weight="bold">Model: Llama 3.1 8B | Temp: 0.3</text>
+
+  <!-- 5. QA Agent -->
+  <rect x="1300" y="380" width="280" height="130" rx="6" class="agent-box"/>
+  <text x="1440" y="405" class="label" text-anchor="middle" font-weight="bold">5. QA Agent</text>
+  <text x="1310" y="425" class="small-label">Responsibilities:</text>
+  <text x="1320" y="442" class="tiny-label">• Validate completeness</text>
+  <text x="1320" y="457" class="tiny-label">• Check accuracy &amp; compliance</text>
+  <text x="1320" y="472" class="tiny-label">• Score quality (1-10)</text>
+  <text x="1320" y="487" class="tiny-label">• Trigger revision if score &lt; 8</text>
+  <text x="1440" y="502" class="tiny-label" font-weight="bold">Model: Llama 3.1 70B | Temp: 0.5</text>
+
+  <!-- Workflow arrows between agents -->
+  <path d="M 800 300 L 200 380" class="arrow"/>
+  <path d="M 800 300 L 510 380" class="arrow"/>
+  <path d="M 800 300 L 820 380" class="arrow"/>
+  <path d="M 800 300 L 1130 380" class="arrow"/>
+  <path d="M 800 300 L 1440 380" class="arrow"/>
+
+  <!-- Sequential flow arrows -->
+  <path d="M 340 445 L 370 445" class="arrow"/>
+  <path d="M 650 445 L 680 445" class="arrow"/>
+  <path d="M 960 445 L 990 445" class="arrow"/>
+  <path d="M 1270 445 L 1300 445" class="arrow"/>
+
+  <!-- Return to supervisor -->
+  <path d="M 200 380 L 200 350 L 700 350 L 700 300" class="data-arrow"/>
+  <path d="M 1440 380 L 1440 350 L 900 350 L 900 300" class="data-arrow"/>
+
+  <!-- Tools & Integration Layer -->
+  <rect x="30" y="740" width="750" height="160" rx="8" fill="#F1F8E9" stroke="#689F38" stroke-width="2"/>
+  <text x="50" y="770" class="subtitle">Tools &amp; Integration Layer</text>
+
+  <!-- RAG Tool -->
+  <rect x="60" y="790" width="200" height="80" rx="6" class="tool-box"/>
+  <text x="160" y="815" class="label" text-anchor="middle" font-weight="bold">Bedrock Knowledge Base</text>
+  <text x="160" y="835" class="tiny-label" text-anchor="middle">RAG with Vector Search</text>
+  <text x="160" y="850" class="tiny-label" text-anchor="middle">S3 + OpenSearch</text>
+  <text x="160" y="865" class="tiny-label" text-anchor="middle">Embeddings: Titan</text>
+
+  <!-- Search Tool -->
+  <rect x="290" y="790" width="200" height="80" rx="6" class="tool-box"/>
+  <text x="390" y="815" class="label" text-anchor="middle" font-weight="bold">Search Tool</text>
+  <text x="390" y="835" class="tiny-label" text-anchor="middle">Find existing SOPs</text>
+  <text x="390" y="850" class="tiny-label" text-anchor="middle">S3 Bucket scan</text>
+  <text x="390" y="865" class="tiny-label" text-anchor="middle">Metadata filtering</text>
+
+  <!-- Compliance API -->
+  <rect x="520" y="790" width="200" height="80" rx="6" class="tool-box"/>
+  <text x="620" y="815" class="label" text-anchor="middle" font-weight="bold">Compliance API</text>
+  <text x="620" y="835" class="tiny-label" text-anchor="middle">Industry regulations</text>
+  <text x="620" y="850" class="tiny-label" text-anchor="middle">OSHA, EPA, ISO</text>
+  <text x="620" y="865" class="tiny-label" text-anchor="middle">REST API Gateway</text>
+
+  <!-- Tool connections -->
+  <path d="M 510 510 L 510 750 L 160 750 L 160 790" class="data-arrow"/>
+  <path d="M 510 510 L 510 750 L 390 750 L 390 790" class="data-arrow"/>
+  <path d="M 510 510 L 510 750 L 620 750 L 620 790" class="data-arrow"/>
+
+  <!-- State Management & Storage -->
+  <rect x="820" y="740" width="750" height="160" rx="8" fill="#FCE4EC" stroke="#C2185B" stroke-width="2"/>
+  <text x="840" y="770" class="subtitle">State Management &amp; Storage Layer</text>
+
+  <!-- Strand State -->
+  <rect x="850" y="790" width="200" height="80" rx="6" class="storage-box"/>
+  <text x="950" y="815" class="label" text-anchor="middle" font-weight="bold">Strand State Graph</text>
+  <text x="950" y="835" class="tiny-label" text-anchor="middle">In-memory state</text>
+  <text x="950" y="850" class="tiny-label" text-anchor="middle">Shared context</text>
+  <text x="950" y="865" class="tiny-label" text-anchor="middle">Type-safe schemas</text>
+
+  <!-- DynamoDB -->
+  <rect x="1080" y="790" width="200" height="80" rx="6" class="storage-box"/>
+  <text x="1180" y="815" class="label" text-anchor="middle" font-weight="bold">DynamoDB</text>
+  <text x="1180" y="835" class="tiny-label" text-anchor="middle">Workflow checkpoints</text>
+  <text x="1180" y="850" class="tiny-label" text-anchor="middle">State persistence</text>
+  <text x="1180" y="865" class="tiny-label" text-anchor="middle">Resume capability</text>
+
+  <!-- S3 Storage -->
+  <rect x="1310" y="790" width="200" height="80" rx="6" class="storage-box"/>
+  <text x="1410" y="815" class="label" text-anchor="middle" font-weight="bold">S3 Document Store</text>
+  <text x="1410" y="835" class="tiny-label" text-anchor="middle">Final SOP documents</text>
+  <text x="1410" y="850" class="tiny-label" text-anchor="middle">Versioning enabled</text>
+  <text x="1410" y="865" class="tiny-label" text-anchor="middle">Lifecycle policies</text>
+
+  <!-- State connections -->
+  <path d="M 800 300 L 750 320 L 750 780 L 950 780 L 950 790" class="data-arrow"/>
+  <path d="M 950 870 L 950 900 L 1180 900 L 1180 870" class="data-arrow"/>
+  <path d="M 1440 510 L 1440 720 L 1410 720 L 1410 790" class="data-arrow"/>
+
+  <!-- AWS Bedrock Runtime Layer -->
+  <rect x="30" y="930" width="1540" height="120" rx="8" class="bedrock-box"/>
+  <text x="800" y="960" class="label" text-anchor="middle" font-weight="bold">AWS Bedrock Runtime API</text>
+  
+  <!-- Bedrock components -->
+  <rect x="60" y="980" width="340" height="50" rx="4" fill="#FFECB3" stroke="#FF6F00" stroke-width="1"/>
+  <text x="230" y="1000" class="tiny-label" text-anchor="middle" font-weight="bold">InvokeModel API</text>
+  <text x="230" y="1015" class="tiny-label" text-anchor="middle">Synchronous inference</text>
+
+  <rect x="430" y="980" width="340" height="50" rx="4" fill="#FFECB3" stroke="#FF6F00" stroke-width="1"/>
+  <text x="600" y="1000" class="tiny-label" text-anchor="middle" font-weight="bold">Llama 3.1 Models</text>
+  <text x="600" y="1015" class="tiny-label" text-anchor="middle">8B | 70B | 405B</text>
+
+  <rect x="800" y="980" width="340" height="50" rx="4" fill="#FFECB3" stroke="#FF6F00" stroke-width="1"/>
+  <text x="970" y="1000" class="tiny-label" text-anchor="middle" font-weight="bold">Streaming Support</text>
+  <text x="970" y="1015" class="tiny-label" text-anchor="middle">Real-time responses</text>
+
+  <rect x="1170" y="980" width="340" height="50" rx="4" fill="#FFECB3" stroke="#FF6F00" stroke-width="1"/>
+  <text x="1340" y="1000" class="tiny-label" text-anchor="middle" font-weight="bold">IAM Authentication</text>
+  <text x="1340" y="1015" class="tiny-label" text-anchor="middle">Role-based access</text>
+
+  <!-- Connections from agents to Bedrock -->
+  <path d="M 200 510 L 200 920 L 230 920 L 230 930" class="thick-arrow"/>
+  <path d="M 510 510 L 510 920 L 600 920 L 600 930" class="thick-arrow"/>
+  <path d="M 820 510 L 820 920 L 970 920 L 970 930" class="thick-arrow"/>
+  <path d="M 1130 510 L 1130 920 L 1340 920 L 1340 930" class="thick-arrow"/>
+
+  <!-- Output Flow -->
+  <rect x="200" y="1080" width="1200" height="80" rx="8" fill="#E8F5E9" stroke="#4CAF50" stroke-width="3"/>
+  <text x="800" y="1110" class="label" text-anchor="middle" font-weight="bold">Final Output Generation</text>
+  <text x="800" y="1135" class="small-label" text-anchor="middle">Generated SOP Document (Markdown/DOCX/PDF) + Metadata + QA Report</text>
+  <text x="800" y="1150" class="tiny-label" text-anchor="middle">S3 Location + Version ID + Quality Score + Compliance Status</text>
+
+  <!-- Arrow from S3 to output -->
+  <path d="M 1410 870 L 1410 1050 L 1100 1050 L 1100 1080" class="arrow"/>
+
+  <!-- Legend -->
+  <rect x="30" y="1180" width="730" height="15" rx="3" fill="#FFFFFF" stroke="#BDBDBD" stroke-width="1"/>
+  
+  <rect x="40" y="1183" width="60" height="9" rx="2" class="agent-box"/>
+  <text x="110" y="1191" class="tiny-label">Agent Node</text>
+
+  <rect x="180" y="1183" width="60" height="9" rx="2" class="supervisor-box"/>
+  <text x="250" y="1191" class="tiny-label">Orchestrator</text>
+
+  <rect x="320" y="1183" width="60" height="9" rx="2" class="tool-box"/>
+  <text x="390" y="1191" class="tiny-label">Tool/API</text>
+
+  <rect x="450" y="1183" width="60" height="9" rx="2" class="storage-box"/>
+  <text x="520" y="1191" class="tiny-label">Storage</text>
+
+  <line x1="580" y1="1188" x2="630" y2="1188" class="arrow"/>
+  <text x="640" y="1191" class="tiny-label">Control</text>
+
+  <line x1="690" y1="1188" x2="740" y2="1188" class="data-arrow"/>
+  <text x="750" y="1191" class="tiny-label">Data</text>
+
+  <!-- Key Features Box -->
+  <rect x="820" y="1170" width="750" height="25" rx="3" fill="#E1F5FE" stroke="#0277BD" stroke-width="2"/>
+  <text x="1195" y="1188" class="tiny-label" text-anchor="middle" font-weight="bold">Key: Strand Framework • Type-Safe State • RAG Integration • JSON Schema Enforcement • DynamoDB Persistence</text>
+</svg>
