@@ -1,14 +1,8 @@
 """
 Formatter Agent - Module 5, Section 5.1
 
-Formats final SOP document using Strand Agent.
-
-GRAPH INTEGRATION PATTERN: same as planning_agent.py — see that file.
-
-BUG FIXED (this session):
-  The outer node Agent had no `model` parameter — see planning_agent.py.
-  Note: the formatting step is pure Python (no LLM call needed), but the
-  node Agent still requires a model to be able to invoke its tool.
+ARCHITECTURE CHANGE: pure Python formatting (no LLM needed).
+See planning_agent.py for full debug instructions.
 """
 
 import os
@@ -23,28 +17,18 @@ from src.agents.state_store import STATE_STORE
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_ARN = (
+_DEFAULT_MODEL_ID = (
     "arn:aws:bedrock:us-east-2:070797854596:"
     "inference-profile/us.meta.llama3-3-70b-instruct-v1:0"
 )
-
-def _bedrock_model(env_var: str) -> BedrockModel:
-    return BedrockModel(
-        model_id=os.getenv(env_var, _DEFAULT_ARN),
-        region=os.getenv("AWS_REGION", "us-east-2"),
-    )
+_REGION = os.getenv("AWS_REGION", "us-east-2")
 
 
-# ---------------------------------------------------------------------------
-# Pure-Python formatting logic (no LLM needed for this step)
-# ---------------------------------------------------------------------------
+def _get_model_id(env_var: str) -> str:
+    return os.getenv(env_var, _DEFAULT_MODEL_ID)
 
-def _build_document(
-    title: str,
-    industry: str,
-    target_audience: str,
-    content_sections: dict,
-) -> str:
+
+def _build_document(title: str, industry: str, target_audience: str, content_sections: dict) -> str:
     doc_parts = []
 
     doc_parts.append(f"# {title}")
@@ -58,11 +42,12 @@ def _build_document(
     doc_parts.append("")
     doc_parts.append("---")
     doc_parts.append("")
-
     doc_parts.append("## Table of Contents")
     doc_parts.append("")
+
     for i, section_title in enumerate(content_sections.keys(), 1):
         doc_parts.append(f"{i}. {section_title}")
+
     doc_parts.append("")
     doc_parts.append("---")
     doc_parts.append("")
@@ -86,33 +71,37 @@ def _build_document(
     return "\n".join(doc_parts)
 
 
-# ---------------------------------------------------------------------------
-# Graph-level tool — called by the formatter_agent node
-# ---------------------------------------------------------------------------
-
 @tool
 async def run_formatting(prompt: str) -> str:
     """Execute the SOP formatting step.
 
-    Reads the SOPState identified by the workflow_id embedded in the prompt,
-    assembles the formatted markdown document from content_sections, saves it
-    to STATE_STORE, and returns a summary string for the next graph node.
-
     Args:
-        prompt: The graph message string containing 'workflow_id::<id>'.
+        prompt: Graph message string containing 'workflow_id::<id>'.
     """
+    logger.info(">>> run_formatting called | prompt: %s", prompt[:120])
+
     workflow_id = ""
     if "workflow_id::" in prompt:
         workflow_id = prompt.split("workflow_id::")[1].split()[0].strip()
+    logger.debug("Extracted workflow_id: '%s'", workflow_id)
 
     state: SOPState = STATE_STORE.get(workflow_id)
     if state is None:
-        return f"ERROR: no state found for workflow_id={workflow_id}"
+        msg = f"ERROR: no state found for workflow_id='{workflow_id}' | store keys: {list(STATE_STORE.keys())}"
+        logger.error(msg)
+        return msg
+
+    logger.info("State found | content_sections: %s",
+                list(state.content_sections.keys()) if state.content_sections else "EMPTY - missing!")
+
+    if not state.content_sections:
+        msg = f"ERROR: no content_sections in state for workflow_id='{workflow_id}'"
+        logger.error(msg)
+        state.add_error(msg)
+        state.status = WorkflowStatus.FAILED
+        return f"workflow_id::{workflow_id} | Formatting FAILED: {msg}"
 
     try:
-        if not state.content_sections:
-            raise ValueError("No content sections available for formatting")
-
         title = state.outline.title if state.outline else state.topic
 
         formatted_doc = _build_document(
@@ -132,30 +121,25 @@ async def run_formatting(prompt: str) -> str:
 
         return (
             f"workflow_id::{workflow_id} | "
-            f"Formatting complete: document assembled with "
-            f"{len(state.content_sections)} sections ({len(formatted_doc)} chars)"
+            f"Formatting complete: {len(state.content_sections)} sections, "
+            f"{len(formatted_doc)} chars"
         )
 
     except Exception as e:
-        logger.error("Formatting failed: %s", e)
+        logger.exception("Formatting FAILED for workflow_id=%s", workflow_id)
         state.add_error(f"Formatting failed: {str(e)}")
         state.status = WorkflowStatus.FAILED
         return f"workflow_id::{workflow_id} | Formatting FAILED: {e}"
 
 
-# ---------------------------------------------------------------------------
-# The Agent node registered with GraphBuilder
-# FIX: node Agent must have a model so it can actually invoke the tool.
-# ---------------------------------------------------------------------------
-
 formatter_agent = Agent(
     name="FormatterNode",
-    model=_bedrock_model("MODEL_FORMATTER"),
+    model=BedrockModel(model_id=_get_model_id("MODEL_FORMATTER"), region=_REGION),
     system_prompt=(
         "You are the formatting node in an SOP generation pipeline. "
         "When you receive a message, IMMEDIATELY call the run_formatting tool "
         "with the full message as the prompt argument. "
-        "Do not add any commentary — just call the tool and return its result."
+        "Do not add commentary — just call the tool and return its result."
     ),
     tools=[run_formatting],
 )

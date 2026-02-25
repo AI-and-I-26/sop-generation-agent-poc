@@ -1,19 +1,14 @@
 """
 Research Agent - Module 5, Section 5.1
 
-Performs research using RAG (Bedrock Knowledge Base) and other tools.
-
-GRAPH INTEGRATION PATTERN: same as planning_agent.py — see that file for the
-full explanation.
-
-BUG FIXED (this session):
-  The outer node Agent had no `model` parameter — see planning_agent.py.
+ARCHITECTURE CHANGE: direct boto3 converse call instead of inner Agent.
+See planning_agent.py for full explanation and debug instructions.
 """
 
 import os
 import json
 import logging
-from typing import Dict
+import boto3
 
 from strands import Agent, tool
 from strands.models import BedrockModel
@@ -23,161 +18,129 @@ from src.agents.state_store import STATE_STORE
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_ARN = (
+_DEFAULT_MODEL_ID = (
     "arn:aws:bedrock:us-east-2:070797854596:"
     "inference-profile/us.meta.llama3-3-70b-instruct-v1:0"
 )
+_REGION = os.getenv("AWS_REGION", "us-east-2")
 
-def _bedrock_model(env_var: str) -> BedrockModel:
-    return BedrockModel(
-        model_id=os.getenv(env_var, _DEFAULT_ARN),
-        region=os.getenv("AWS_REGION", "us-east-2"),
+
+def _get_model_id(env_var: str) -> str:
+    return os.getenv(env_var, _DEFAULT_MODEL_ID)
+
+
+def _call_bedrock(model_id: str, system_prompt: str, user_prompt: str) -> str:
+    logger.debug("=== BEDROCK CALL [research] ===")
+    logger.debug("Model: %s | Region: %s", model_id, _REGION)
+    logger.debug("User prompt:\n%s", user_prompt)
+
+    client = boto3.client("bedrock-runtime", region_name=_REGION)
+    response = client.converse(
+        modelId=model_id,
+        system=[{"text": system_prompt}],
+        messages=[{"role": "user", "content": [{"text": user_prompt}]}],
+        inferenceConfig={"maxTokens": 2048},
     )
 
+    logger.debug("Raw response: %s", json.dumps(response, default=str))
 
-# ---------------------------------------------------------------------------
-# Domain tools used by the inner LLM agent
-# ---------------------------------------------------------------------------
+    content = response.get("output", {}).get("message", {}).get("content", [])
+    if not content:
+        raise ValueError(f"Bedrock returned empty content. Response: {response}")
 
-@tool
-def search_knowledge_base(query: str, max_results: int = 5) -> str:
-    """Search Bedrock Knowledge Base for similar SOPs and procedures.
+    text = content[0].get("text", "").strip()
+    if not text:
+        raise ValueError(f"Bedrock returned blank text. Response: {response}")
 
-    Args:
-        query: The search query string.
-        max_results: Maximum number of results to return (default 5).
-    """
-    import boto3
-
-    try:
-        kb_client = boto3.client(
-            "bedrock-agent-runtime",
-            region_name=os.getenv("AWS_REGION", "us-east-1"),
-        )
-        kb_id = os.getenv("KNOWLEDGE_BASE_ID")
-
-        response = kb_client.retrieve(
-            knowledgeBaseId=kb_id,
-            retrievalQuery={"text": query},
-            retrievalConfiguration={
-                "vectorSearchConfiguration": {"numberOfResults": max_results}
-            },
-        )
-
-        results = []
-        for result in response.get("retrievalResults", []):
-            results.append({
-                "content": result["content"]["text"],
-                "score": result["score"],
-                "source": result.get("location", {})
-                    .get("s3Location", {})
-                    .get("uri", "Unknown"),
-            })
-
-        return json.dumps(results)
-
-    except Exception as e:
-        logger.error("KB search error: %s", e)
-        return json.dumps({"error": str(e)})
+    logger.debug("Response text (%d chars):\n%s", len(text), text)
+    return text
 
 
-@tool
-def get_compliance_requirements(industry: str, topic: str) -> str:
-    """Get compliance and regulatory requirements for an industry and topic.
+def _parse_json_response(text: str) -> dict:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    return json.loads(text)
 
-    Args:
-        industry: The industry name (e.g. 'Manufacturing', 'Healthcare').
-        topic: The SOP topic for which compliance is needed.
-    """
+
+def _get_compliance(industry: str) -> list:
+    """Inline compliance lookup (no external call needed)."""
     compliance_map = {
         "Manufacturing": ["OSHA 1910", "ISO 9001"],
         "Healthcare": ["HIPAA", "FDA 21 CFR"],
         "Laboratory": ["CLIA", "CAP Standards"],
     }
-    requirements = compliance_map.get(industry, ["General Safety"])
-    return json.dumps({"industry": industry, "requirements": requirements})
+    return compliance_map.get(industry, ["General Safety Standards"])
 
-
-# ---------------------------------------------------------------------------
-# Inner LLM agent (string prompt in → string JSON out)
-# ---------------------------------------------------------------------------
-
-def _make_llm_agent() -> Agent:
-    return Agent(
-        name="ResearchLLM",
-        model=_bedrock_model("MODEL_RESEARCH"),
-        system_prompt="""You are a research specialist for SOP development.
-Find relevant information from knowledge bases and compliance databases.
-
-TOOLS: search_knowledge_base, get_compliance_requirements
-
-STRATEGY:
-1. Search knowledge base for similar SOPs
-2. Get compliance requirements for the industry
-3. Extract best practices and cite sources
-
-OUTPUT FORMAT — Return JSON only:
-{
-  "similar_sops": [{"title": "...", "relevance": 0.95, "key_points": ["..."]}],
-  "compliance_requirements": ["Regulation 1"],
-  "best_practices": ["Best practice 1"],
-  "sources": ["Source 1"]
-}""",
-        tools=[search_knowledge_base, get_compliance_requirements],
-        max_tokens=2048,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Graph-level tool — called by the research_agent node
-# ---------------------------------------------------------------------------
 
 @tool
 async def run_research(prompt: str) -> str:
     """Execute the SOP research step.
 
-    Reads the SOPState identified by the workflow_id embedded in the prompt,
-    conducts research using knowledge base and compliance tools, saves findings
-    to STATE_STORE, and returns a summary string for the next graph node.
-
     Args:
-        prompt: The graph message string containing 'workflow_id::<id>'.
+        prompt: Graph message string containing 'workflow_id::<id>'.
     """
+    logger.info(">>> run_research called | prompt: %s", prompt[:120])
+
     workflow_id = ""
     if "workflow_id::" in prompt:
         workflow_id = prompt.split("workflow_id::")[1].split()[0].strip()
+    logger.debug("Extracted workflow_id: '%s'", workflow_id)
 
     state: SOPState = STATE_STORE.get(workflow_id)
     if state is None:
-        return f"ERROR: no state found for workflow_id={workflow_id}"
+        msg = f"ERROR: no state found for workflow_id='{workflow_id}' | store keys: {list(STATE_STORE.keys())}"
+        logger.error(msg)
+        return msg
+
+    logger.info("State found | topic='%s' | outline sections: %d",
+                state.topic, len(state.outline.sections) if state.outline else 0)
 
     try:
-        llm = _make_llm_agent()
+        model_id = _get_model_id("MODEL_RESEARCH")
+        compliance = _get_compliance(state.industry)
+        logger.info("Compliance requirements: %s", compliance)
 
         outline_summary = ""
         if state.outline:
-            sections = [s.title for s in (state.outline.sections or [])]
-            outline_summary = f"Outline sections: {', '.join(sections[:5])}"
+            titles = [s.title for s in state.outline.sections[:5]]
+            outline_summary = f"Outline sections: {', '.join(titles)}"
 
-        research_prompt = (
-            f"Research the following SOP topic:\n"
-            f"Topic: {state.topic}\n"
-            f"Industry: {state.industry}\n"
-            f"{outline_summary}\n\n"
-            f"Use the available tools to search the knowledge base and get "
-            f"compliance requirements. Return findings as JSON."
+        system_prompt = (
+            "You are a research specialist for SOP development. "
+            "Return ONLY valid JSON — no prose, no markdown fences.\n\n"
+            "JSON structure:\n"
+            '{\n'
+            '  "similar_sops": [{"title": "...", "relevance": 0.9, "key_points": ["..."]}],\n'
+            '  "compliance_requirements": ["..."],\n'
+            '  "best_practices": ["..."],\n'
+            '  "sources": ["..."]\n'
+            '}'
         )
 
-        response = await llm.invoke_async(research_prompt)
-        response_text = str(response).strip()
+        user_prompt = (
+            f"Research SOPs for the following:\n"
+            f"Topic: {state.topic}\n"
+            f"Industry: {state.industry}\n"
+            f"Known compliance requirements: {', '.join(compliance)}\n"
+            f"{outline_summary}\n\n"
+            f"Identify similar SOPs, best practices, and all relevant "
+            f"regulatory requirements. Return findings as JSON."
+        )
 
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.startswith("json"):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
+        raw_text = _call_bedrock(model_id, system_prompt, user_prompt)
+        findings_data = _parse_json_response(raw_text)
 
-        findings_data = json.loads(response_text)
+        # Ensure compliance requirements include what we already know
+        existing = findings_data.get("compliance_requirements", [])
+        for c in compliance:
+            if c not in existing:
+                existing.append(c)
+        findings_data["compliance_requirements"] = existing
+
         findings = ResearchFindings(**findings_data)
 
         state.research = findings
@@ -185,35 +148,30 @@ async def run_research(prompt: str) -> str:
         state.current_node = "research"
         state.increment_tokens(2000)
 
-        logger.info("Research complete — %d similar SOPs | workflow_id=%s",
-                    len(findings.similar_sops), workflow_id)
+        logger.info("Research complete — %d similar SOPs, %d compliance reqs | workflow_id=%s",
+                    len(findings.similar_sops), len(findings.compliance_requirements), workflow_id)
 
         return (
             f"workflow_id::{workflow_id} | "
-            f"Research complete: found {len(findings.similar_sops)} similar SOPs, "
+            f"Research complete: {len(findings.similar_sops)} similar SOPs, "
             f"{len(findings.compliance_requirements)} compliance requirements"
         )
 
     except Exception as e:
-        logger.error("Research failed: %s", e)
+        logger.exception("Research FAILED for workflow_id=%s", workflow_id)
         state.add_error(f"Research failed: {str(e)}")
         state.status = WorkflowStatus.FAILED
         return f"workflow_id::{workflow_id} | Research FAILED: {e}"
 
 
-# ---------------------------------------------------------------------------
-# The Agent node registered with GraphBuilder
-# FIX: node Agent must have a model so it can actually invoke the tool.
-# ---------------------------------------------------------------------------
-
 research_agent = Agent(
     name="ResearchNode",
-    model=_bedrock_model("MODEL_RESEARCH"),
+    model=BedrockModel(model_id=_get_model_id("MODEL_RESEARCH"), region=_REGION),
     system_prompt=(
         "You are the research node in an SOP generation pipeline. "
         "When you receive a message, IMMEDIATELY call the run_research tool "
         "with the full message as the prompt argument. "
-        "Do not add any commentary — just call the tool and return its result."
+        "Do not add commentary — just call the tool and return its result."
     ),
     tools=[run_research],
 )
