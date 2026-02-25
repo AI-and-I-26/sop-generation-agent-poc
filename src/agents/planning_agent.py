@@ -8,8 +8,10 @@ import os
 import json
 import logging
 from typing import Dict, Any
-from strands import Agent
-from strands.types import ModelConfig
+from strands import Agent,tool
+#from strands.types import ModelConfig
+from strands.models import BedrockModel
+import boto3
 
 from src.graph.state_schema import SOPState, SOPOutline, WorkflowStatus
 
@@ -23,25 +25,22 @@ class PlanningAgent:
     Generates comprehensive SOP outlines with proper structure.
     Uses JSON schema enforcement for consistent outputs.
     """
-    
+        
+    # Create Strand Agent
+        
     def __init__(self):
-        """Initialize Planning Agent with Strand"""
-        
-        model_id = os.getenv('MODEL_PLANNING', 'meta.llama3-1-70b-instruct-v1:0')
-        
-        # Create Strand Agent
+        model_id = os.getenv("MODEL_PLANNING", "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0")
+        region   = os.getenv("AWS_REGION", "us-east-2")
+
         self.agent = Agent(
             name="PlanningAgent",
-            model=f"bedrock/{model_id}",
+            model=BedrockModel(model_id=model_id, region=region),
             system_prompt=self._get_system_prompt(),
             temperature=0.7,
             max_tokens=2048,
-            response_format={"type": "json_object"},  # Force JSON output
-            model_config=ModelConfig(
-                region=os.getenv('AWS_REGION', 'us-east-1')
-            )
+            response_format={"type": "json_object"},
         )
-        
+
         logger.info(f"Initialized PlanningAgent with model: {model_id}")
     
     def _get_system_prompt(self) -> str:
@@ -111,8 +110,14 @@ Additional Requirements: {', '.join(requirements or [])}
 Return valid JSON with all required sections."""
         
         try:
+           
+            # Inside PlanningAgent.create_outline (before invoking the agent)
+            assert self.agent is not None, "PlanningAgent.agent is None — constructor failed"
+            print("DEBUG type(self.agent) =", type(self.agent))
+
+           
             # Invoke Strand agent
-            response = await self.agent.ainvoke(user_prompt)
+            response = await self.agent.invoke_async(user_prompt)
             
             # Parse JSON
             outline_data = json.loads(response.content)
@@ -160,9 +165,17 @@ Return valid JSON with all required sections."""
         
         return state
 
-
-# Standalone node function for Strand StateGraph
-async def planning_node(state: SOPState) -> SOPState:
-    """Planning node for Strand StateGraph"""
+@tool
+async def planning_tool(state: SOPState) -> SOPState:
+    # """Planning tool: executes the PlanningAgent logic."""
     agent = PlanningAgent()
     return await agent.execute(state)
+
+# 2) Create the Strands Agent
+planning_agent = Agent(
+    tools=[planning_tool],
+    #system_prompt="Plan SOP steps before research."
+)
+
+
+

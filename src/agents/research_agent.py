@@ -8,10 +8,13 @@ Uses Strand Agent with Tool integration.
 import os
 import json
 import logging
-from typing import Dict, List
-from strands import Agent
-from strands.tools import Tool
-from strands.types import ModelConfig
+from typing import Dict, List,Callable,Any
+from strands import Agent,tool
+#from strands.tools import Tool
+from strands import tool
+#from strands.types import ModelConfig
+from strands.models import BedrockModel
+
 
 from src.graph.state_schema import SOPState, ResearchFindings, WorkflowStatus
 
@@ -28,27 +31,24 @@ class ResearchAgent:
     
     def __init__(self):
         """Initialize Research Agent with Strand and Tools"""
-        
-        model_id = os.getenv('MODEL_RESEARCH', 'meta.llama3-1-70b-instruct-v1:0')
-        
+               
         # Define tools for the agent
         tools = [
             self._create_kb_search_tool(),
             self._create_compliance_tool()
         ]
-        
-        # Create Strand Agent with tools
+       
+        model_id = os.getenv("MODEL_RESEARCH", "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0")
+        region   = os.getenv("AWS_REGION", "us-east-2")
+
         self.agent = Agent(
             name="ResearchAgent",
-            model=f"bedrock/{model_id}",
+            model=BedrockModel(model_id=model_id, region=region),
             system_prompt=self._get_system_prompt(),
             tools=tools,  # Strand handles tool calling
             temperature=0.5,
             max_tokens=2048,
-            response_format={"type": "json_object"},
-            model_config=ModelConfig(
-                region=os.getenv('AWS_REGION', 'us-east-1')
-            )
+            response_format={"type": "json_object"}
         )
         
         logger.info("Initialized ResearchAgent with RAG tools")
@@ -85,9 +85,10 @@ Return JSON with:
 }
 """
     
-    def _create_kb_search_tool(self) -> Tool:
-        """Create knowledge base search tool"""
-        
+    
+    def _create_kb_search_tool(self) -> Callable[..., Any]:
+        """Create and return the Knowledge Base search tool (as a decorated function)."""
+        @tool
         def search_kb(query: str, max_results: int = 5) -> str:
             """Search Bedrock Knowledge Base"""
             import boto3
@@ -137,9 +138,9 @@ Return JSON with:
             }
         )
     
-    def _create_compliance_tool(self) -> Tool:
-        """Create compliance requirements tool"""
-        
+    def _create_compliance_tool(self) -> Callable[..., Any]:
+        """Create compliance requirements tool"""        
+        @tool
         def get_compliance(industry: str, topic: str) -> str:
             """Get compliance requirements"""
             # Placeholder - integrate with compliance API
@@ -197,7 +198,7 @@ Return comprehensive research findings in JSON format."""
         
         try:
             # Invoke agent (Strand handles tool calling automatically)
-            response = await self.agent.ainvoke(prompt)
+            response = await self.agent.invoke_async(prompt)
             
             # Parse response
             findings_data = json.loads(response.content)
@@ -233,9 +234,21 @@ Return comprehensive research findings in JSON format."""
         
         return state
 
-
+"""
 # Standalone node function for Strand StateGraph
 async def research_node(state: SOPState) -> SOPState:
-    """Research node for Strand StateGraph"""
+    agent = ResearchAgent()
+    return await agent.execute(state) """
+
+    
+@tool
+async def research_tool(state: SOPState) -> SOPState:
+    #"""Planning tool: executes the PlanningAgent logic."""
     agent = ResearchAgent()
     return await agent.execute(state)
+
+# Create the actual graph node executor
+research_agent = Agent(
+    tools=[research_tool],
+    #system_prompt="Plan SOP steps before research."
+)
