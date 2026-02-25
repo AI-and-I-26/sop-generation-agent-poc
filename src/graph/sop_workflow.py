@@ -6,14 +6,26 @@ import logging
 from strands.multiagent.graph import GraphBuilder
 from src.graph.state_schema import SOPState, WorkflowStatus
 
-# FIX: Import the Agent objects (planning_agent, research_agent), NOT the raw
-# @tool-decorated functions (planning_tool, research_tool).
-# GraphBuilder.add_node() only accepts Strands Agent instances as node executors.
-# Passing a DecoratedFunctionTool raises:
-#   ValueError: Node 'planning' of type
-#     '<class 'strands.tools.decorator.DecoratedFunctionTool'>' is not supported
-from src.agents.planning_agent import planning_agent
-from src.agents.research_agent import research_agent
+# FIX: Import plain async node functions, NOT Agent objects.
+#
+# The full error chain was:
+#   1. First attempt:  added @tool functions as nodes
+#      → ValueError: Node of type 'DecoratedFunctionTool' is not supported
+#   2. Second attempt: added Agent(tools=[...]) wrappers as nodes
+#      → ValueError: Input prompt must be of type: str | list[ContentBlock] | Messages | None
+#
+# Root cause of error #2: when the graph executes a node whose executor is an
+# Agent, it calls agent.stream_async(node_input) where node_input is the
+# SOPState object passed between nodes. The Agent expects a string/message
+# prompt, not a Pydantic state object — hence the type error.
+#
+# Correct pattern: register plain async functions with signature
+#   async def my_node(state: SOPState) -> SOPState
+# The graph calls these directly with the state object, which is exactly what
+# they expect. The Strands Agent is used *inside* those functions with a
+# proper string prompt.
+from src.agents.planning_agent import planning_node
+from src.agents.research_agent import research_node
 from src.agents.content_agent import content_agent
 from src.agents.formatter_agent import formatter_agent
 from src.agents.qa_agent import qa_agent
@@ -25,9 +37,9 @@ def create_sop_workflow():
 
     gb = GraphBuilder()
 
-    # Add Agent objects as nodes (NOT @tool functions)
-    gb.add_node(planning_agent, "planning")
-    gb.add_node(research_agent, "research")
+    # Register plain async node functions (SOPState -> SOPState)
+    gb.add_node(planning_node, "planning")
+    gb.add_node(research_node, "research")
     gb.add_node(content_agent, "content")
     gb.add_node(formatter_agent, "formatter")
     gb.add_node(qa_agent, "qa")
