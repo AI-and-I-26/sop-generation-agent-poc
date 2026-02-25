@@ -2,184 +2,178 @@
 Content Agent - Module 5, Section 5.1
 
 Generates detailed SOP content using Strand Agent with few-shot prompting.
+
+GRAPH INTEGRATION PATTERN: same as planning_agent.py.
+  - content_agent  : the Agent node registered with GraphBuilder
+  - run_content    : @tool that reads/writes STATE_STORE, calls the inner LLM
+  - _make_llm_agent: builds the inner Agent that receives a plain string prompt
+
+BUGS FIXED vs original:
+  1. response.content        → str(response)   (AgentResult has no .content)
+  2. temperature=0.8         → removed          (not a valid Strands Agent kwarg)
+  3. response_format={...}   → removed          (not a valid Strands Agent kwarg)
+  4. content_tool / Agent(tools=[content_tool]) pattern replaced with the
+     two-layer STATE_STORE pattern so the graph node receives a string, not
+     a SOPState object.
 """
 
 import os
 import json
 import logging
 from typing import Dict
-from strands import Agent,tool
-#from strands.types import ModelConfig
+
+from strands import Agent, tool
 from strands.models import BedrockModel
 
 from src.graph.state_schema import SOPState, WorkflowStatus
+from src.agents.state_store import STATE_STORE
 
 logger = logging.getLogger(__name__)
 
 
-class ContentAgent:
-    """
-    Content Generation Agent using Strand SDK
-    
-    Creates detailed, professional SOP content with proper formatting,
-    safety warnings, and quality checkpoints.
-    """
-    
-    def __init__(self):
-        """Initialize Content Agent with Strand"""      
+# ---------------------------------------------------------------------------
+# Inner LLM agent (string prompt in → string JSON out)
+# ---------------------------------------------------------------------------
 
-        model_id = os.getenv("MODEL_QA", "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0")
-        region   = os.getenv("AWS_REGION", "us-east-2")
+def _make_llm_agent() -> Agent:
+    model_id = os.getenv(
+        "MODEL_CONTENT",
+        "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0",
+    )
+    region = os.getenv("AWS_REGION", "us-east-2")
 
-        self.agent = Agent(
-            name="ContentAgent",
-            model=BedrockModel(model_id=model_id, region=region),
-            system_prompt=self._get_system_prompt(),          
-            temperature=0.8,
-            max_tokens=2048,
-            response_format={"type": "json_object"}
-        )
-        
-        logger.info("Initialized ContentAgent")
-    
-    def _get_system_prompt(self) -> str:
-        """Get system prompt with few-shot examples"""
-        return """You are a technical writer specializing in Standard Operating Procedures.
+    return Agent(
+        name="ContentLLM",
+        model=BedrockModel(model_id=model_id, region=region),
+        system_prompt="""You are a technical writer specializing in Standard Operating Procedures.
 
 WRITING STYLE:
 - Active voice and imperative mood ("Perform X" not "X should be performed")
 - Specific and quantitative (exact numbers, temperatures, times)
 - Clear and concise language
-- Appropriate technical level for target audience
+- Appropriate technical level for the target audience
 
 FORMATTING REQUIREMENTS:
 1. Number all procedure steps (1., 2., 3.)
-2. Mark safety warnings: ⚠️ WARNING: [warning text]
-3. Mark critical notes: ⚡ CRITICAL: [critical information]
-4. Mark quality checkpoints: ✓ CHECKPOINT: [what to verify]
-5. Include time estimates
+2. Mark safety warnings:      ⚠️ WARNING: [warning text]
+3. Mark critical notes:        ⚡ CRITICAL: [critical information]
+4. Mark quality checkpoints:   ✓ CHECKPOINT: [what to verify]
+5. Include time estimates per step
 
-EXAMPLE OUTPUT:
+OUTPUT FORMAT — Return ONLY valid JSON:
 {
-  "section_title": "Emergency Shutdown Procedure",
-  "content": "## Emergency Shutdown Procedure\\n\\n1. **Alert Personnel**\\n   - Activate emergency alarm\\n   - Announce over PA system\\n   - Estimated time: 10 seconds\\n\\n2. **Isolate System**\\n   - Rotate valve 90° clockwise\\n   - ✓ CHECKPOINT: Flow indicator shows zero\\n   - ⚠️ WARNING: Do not force valve\\n   - Estimated time: 30 seconds",
-  "safety_warnings": ["Do not force valve past stop point"],
-  "quality_checkpoints": ["Flow indicator shows zero"],
+  "section_title": "Section Name",
+  "content": "## Section Name\\n\\n1. **Step One**\\n   - Detail\\n   - ⚠️ WARNING: ...\\n   - ✓ CHECKPOINT: ...\\n   - Estimated time: 30 seconds",
+  "safety_warnings": ["Warning text"],
+  "quality_checkpoints": ["Checkpoint text"],
   "time_estimate_minutes": 5
-}
+}""",
+        max_tokens=2048,
+    )
 
-OUTPUT FORMAT:
-Always return valid JSON with these fields:
-- section_title (string)
-- content (string with markdown formatting)
-- safety_warnings (array of strings)
-- quality_checkpoints (array of strings)
-- time_estimate_minutes (integer)
-"""
-    
-    async def generate_section_content(
-        self,
-        section_title: str,
-        research_findings: Dict,
-        target_audience: str
-    ) -> Dict:
-        """
-        Generate content for a section
-        
-        Args:
-            section_title: Title of section
-            research_findings: Research data
-            target_audience: Target users
-            
-        Returns:
-            Dict with content and metadata
-        """
-        
-        # Extract relevant research
-        best_practices = research_findings.get('best_practices', [])
-        compliance = research_findings.get('compliance_requirements', [])
-        
-        prompt = f"""Write detailed content for this SOP section:
 
-Section: {section_title}
-Target Audience: {target_audience}
-
-Relevant Information:
-- Best Practices: {', '.join(best_practices) if best_practices else 'None'}
-- Compliance: {', '.join(compliance) if compliance else 'None'}
-
-Requirements:
-1. Write clear, numbered steps
-2. Include safety warnings where applicable
-3. Add quality checkpoints
-4. Provide time estimates
-5. Use specific measurements and quantities
-
-Return complete JSON with all required fields."""
-        
-        try:
-            response = await self.agent.invoke_async(prompt)
-            content_data = json.loads(response.content)
-            
-            logger.info(f"Generated content for: {section_title}")
-            
-            return content_data
-            
-        except Exception as e:
-            logger.error(f"Content generation failed for {section_title}: {e}")
-            raise
-    
-    async def execute(self, state: SOPState) -> SOPState:
-        """Execute content agent"""
-        try:
-            # Generate content for each section in outline
-            if not state.outline:
-                raise ValueError("No outline available for content generation")
-            
-            content_sections = {}
-            research_data = state.research.dict() if state.research else {}
-            
-            # Generate content for first 5 sections (or all if fewer)
-            sections_to_generate = state.outline.sections[:5]
-            
-            for section in sections_to_generate:
-                section_content = await self.generate_section_content(
-                    section_title=section.title,
-                    research_findings=research_data,
-                    target_audience=state.target_audience
-                )
-                
-                # Store the content
-                content_sections[section.title] = section_content['content']
-                
-                state.increment_tokens(2500)
-            
-            state.content_sections = content_sections
-            state.status = WorkflowStatus.WRITTEN
-            state.current_node = "content"
-            
-            logger.info(f"Generated content for {len(content_sections)} sections")
-            
-        except Exception as e:
-            state.add_error(f"Content generation failed: {str(e)}")
-            state.status = WorkflowStatus.FAILED
-        
-        return state
-
-"""
-# Standalone node function for Strand StateGraph
-async def content_node(state: SOPState) -> SOPState:
-    agent = ContentAgent()
-    return await agent.execute(state)"""
+# ---------------------------------------------------------------------------
+# Graph-level tool — called by the content_agent node
+# ---------------------------------------------------------------------------
 
 @tool
-async def content_tool(state: SOPState) -> SOPState:
-    #"""Planning tool: executes the PlanningAgent logic."""
-    agent = ContentAgent()
-    return await agent.execute(state)
+async def run_content(prompt: str) -> str:
+    """Execute the SOP content generation step.
 
-# Create the actual graph node executor
+    Reads the SOPState identified by the workflow_id embedded in the prompt,
+    generates detailed content for each outline section, saves results to
+    STATE_STORE, and returns a summary string for the next graph node.
+
+    Args:
+        prompt: The graph message string containing 'workflow_id::<id>'.
+    """
+    workflow_id = ""
+    if "workflow_id::" in prompt:
+        workflow_id = prompt.split("workflow_id::")[1].split()[0].strip()
+
+    state: SOPState = STATE_STORE.get(workflow_id)
+    if state is None:
+        return f"ERROR: no state found for workflow_id={workflow_id}"
+
+    try:
+        if not state.outline:
+            raise ValueError("No outline available for content generation")
+
+        llm = _make_llm_agent()
+        research_data: Dict = state.research.dict() if state.research else {}
+        best_practices = research_data.get("best_practices", [])
+        compliance = research_data.get("compliance_requirements", [])
+
+        content_sections = {}
+
+        # Generate content for first 5 sections (or all if fewer)
+        sections_to_generate = state.outline.sections[:5]
+
+        for section in sections_to_generate:
+            section_prompt = (
+                f"Write detailed content for this SOP section:\n\n"
+                f"Section: {section.title}\n"
+                f"Target Audience: {state.target_audience}\n\n"
+                f"Relevant Information:\n"
+                f"- Best Practices: {', '.join(best_practices) if best_practices else 'None'}\n"
+                f"- Compliance: {', '.join(compliance) if compliance else 'None'}\n\n"
+                f"Requirements:\n"
+                f"1. Write clear, numbered steps\n"
+                f"2. Include safety warnings where applicable\n"
+                f"3. Add quality checkpoints\n"
+                f"4. Provide time estimates\n"
+                f"5. Use specific measurements and quantities\n\n"
+                f"Return complete JSON with all required fields."
+            )
+
+            # FIX: str(response) not response.content
+            response = await llm.invoke_async(section_prompt)
+            response_text = str(response).strip()
+
+            # Strip markdown code fences if present
+            if response_text.startswith("```"):
+                response_text = response_text.split("```")[1]
+                if response_text.startswith("json"):
+                    response_text = response_text[4:]
+                response_text = response_text.strip()
+
+            content_data = json.loads(response_text)
+            content_sections[section.title] = content_data["content"]
+
+            state.increment_tokens(2500)
+            logger.info("Generated content for section: %s | workflow_id=%s",
+                        section.title, workflow_id)
+
+        state.content_sections = content_sections
+        state.status = WorkflowStatus.WRITTEN
+        state.current_node = "content"
+
+        logger.info("Content generation complete — %d sections | workflow_id=%s",
+                    len(content_sections), workflow_id)
+
+        return (
+            f"workflow_id::{workflow_id} | "
+            f"Content complete: {len(content_sections)} sections written for '{state.topic}'"
+        )
+
+    except Exception as e:
+        logger.error("Content generation failed: %s", e)
+        state.add_error(f"Content generation failed: {str(e)}")
+        state.status = WorkflowStatus.FAILED
+        return f"workflow_id::{workflow_id} | Content FAILED: {e}"
+
+
+# ---------------------------------------------------------------------------
+# The Agent node registered with GraphBuilder
+# ---------------------------------------------------------------------------
+
 content_agent = Agent(
-    tools=[content_tool],
-   # system_prompt="Plan SOP steps before research."
+    name="ContentNode",
+    system_prompt=(
+        "You are the content generation node in an SOP generation pipeline. "
+        "When you receive a message, IMMEDIATELY call the run_content tool "
+        "with the full message as the prompt argument. "
+        "Do not add any commentary — just call the tool and return its result."
+    ),
+    tools=[run_content],
 )

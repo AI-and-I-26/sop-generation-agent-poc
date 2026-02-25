@@ -3,198 +3,158 @@ Formatter Agent - Module 5, Section 5.1
 
 Formats final SOP document using Strand Agent.
 Uses smaller/cheaper model (Llama 8B) for cost optimization.
+
+GRAPH INTEGRATION PATTERN: same as planning_agent.py — see that file for the
+full explanation.
+
+BUGS FIXED vs original:
+  1. temperature=0.3         → removed          (not a valid Strands Agent kwarg)
+  2. response_format={...}   → removed          (not a valid Strands Agent kwarg)
+  3. formatter_tool / Agent(tools=[formatter_tool]) pattern replaced with the
+     two-layer STATE_STORE pattern so the graph node receives a string, not
+     a SOPState object.
+  Note: FormatterAgent.format_document() never called the LLM — it built the
+  document purely in Python. That pure-Python logic is preserved here inside
+  run_formatting; no LLM call is needed for this step.
 """
 
 import os
 import logging
 from datetime import datetime
-from strands import Agent,tool
-#from strands.types import ModelConfig
+
+from strands import Agent, tool
 from strands.models import BedrockModel
 
 from src.graph.state_schema import SOPState, WorkflowStatus
+from src.agents.state_store import STATE_STORE
 
 logger = logging.getLogger(__name__)
 
 
-class FormatterAgent:
-    """
-    Formatter Agent using Strand SDK
-    
-    Combines all sections into a cohesive, professionally formatted document.
-    Uses Llama 8B model for cost efficiency.
-    """
-    
-    def __init__(self):
-        """Initialize Formatter Agent with Strand"""
-        
-        model_id = os.getenv("MODEL_FORMATTER", "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0")
-        region   = os.getenv("AWS_REGION", "us-east-2")
+# ---------------------------------------------------------------------------
+# Pure-Python formatting logic (no LLM needed for this step)
+# ---------------------------------------------------------------------------
 
-        self.agent = Agent(
-            name="FormatterAge",
-            model=BedrockModel(model_id=model_id, region=region),
-            system_prompt=self._get_system_prompt(),
-            temperature=0.3,
-            max_tokens=2048,
-            response_format={"type": "json_object"}
-        )
-        
-        logger.info(f"Initialized FormatterAgent with model: {model_id}")
-    
-    def _get_system_prompt(self) -> str:
-        """Get system prompt for formatter"""
-        return """You are a document formatting specialist for Standard Operating Procedures.
+def _build_document(
+    title: str,
+    industry: str,
+    target_audience: str,
+    content_sections: dict,
+) -> str:
+    """Assemble the final markdown SOP document from its parts."""
+    doc_parts = []
 
-Your job is to format SOP content into a professional, cohesive document.
+    # Title and metadata
+    doc_parts.append(f"# {title}")
+    doc_parts.append("")
+    doc_parts.append("**Document Control**")
+    doc_parts.append(f"- Document ID: SOP-{datetime.now().strftime('%Y%m%d-%H%M')}")
+    doc_parts.append("- Version: 1.0")
+    doc_parts.append(f"- Effective Date: {datetime.now().strftime('%Y-%m-%d')}")
+    doc_parts.append(f"- Industry: {industry}")
+    doc_parts.append(f"- Target Audience: {target_audience}")
+    doc_parts.append("")
+    doc_parts.append("---")
+    doc_parts.append("")
 
-DOCUMENT STRUCTURE:
-# [SOP Title]
+    # Table of contents
+    doc_parts.append("## Table of Contents")
+    doc_parts.append("")
+    for i, section_title in enumerate(content_sections.keys(), 1):
+        doc_parts.append(f"{i}. {section_title}")
+    doc_parts.append("")
+    doc_parts.append("---")
+    doc_parts.append("")
 
-**Document Control**
-- Document ID: SOP-XXX
-- Version: 1.0
-- Effective Date: [Date]
-- Industry: [Industry]
-- Target Audience: [Audience]
-
----
-
-## Table of Contents
-[Auto-generated from sections]
-
----
-
-[All sections with consistent formatting]
-
----
-
-**Approval Signatures**
-[Signature block]
-
-FORMATTING RULES:
-- Use # for main title
-- Use ## for section headings
-- Use ### for subsection headings
-- Preserve all numbered steps
-- Keep all safety warnings and checkpoints
-- Maintain consistent spacing
-- Number all sections hierarchically
-
-CRITICAL:
-- Preserve ALL content exactly as provided
-- Do not modify technical details
-- Keep all safety warnings intact
-- Maintain professional tone
-"""
-    
-    async def format_document(
-        self,
-        title: str,
-        industry: str,
-        target_audience: str,
-        content_sections: dict
-    ) -> str:
-        """
-        Format complete SOP document
-        
-        Args:
-            title: SOP title
-            industry: Industry
-            target_audience: Target users
-            content_sections: Dict of section_title: content
-            
-        Returns:
-            Formatted markdown document
-        """
-        
-        # Build document structure
-        doc_parts = []
-        
-        # Title and metadata
-        doc_parts.append(f"# {title}")
+    # All sections
+    for section_title, content in content_sections.items():
+        doc_parts.append(f"## {section_title}")
         doc_parts.append("")
-        doc_parts.append("**Document Control**")
-        doc_parts.append(f"- Document ID: SOP-{datetime.now().strftime('%Y%m%d-%H%M')}")
-        doc_parts.append("- Version: 1.0")
-        doc_parts.append(f"- Effective Date: {datetime.now().strftime('%Y-%m-%d')}")
-        doc_parts.append(f"- Industry: {industry}")
-        doc_parts.append(f"- Target Audience: {target_audience}")
+        doc_parts.append(content)
         doc_parts.append("")
         doc_parts.append("---")
         doc_parts.append("")
-        
-        # Table of contents
-        doc_parts.append("## Table of Contents")
-        doc_parts.append("")
-        for i, section_title in enumerate(content_sections.keys(), 1):
-            doc_parts.append(f"{i}. {section_title}")
-        doc_parts.append("")
-        doc_parts.append("---")
-        doc_parts.append("")
-        
-        # All sections
-        for section_title, content in content_sections.items():
-            doc_parts.append(f"## {section_title}")
-            doc_parts.append("")
-            doc_parts.append(content)
-            doc_parts.append("")
-            doc_parts.append("---")
-            doc_parts.append("")
-        
-        # Signature block
-        doc_parts.append("**Approval Signatures**")
-        doc_parts.append("")
-        doc_parts.append("Prepared by: _________________ Date: _______")
-        doc_parts.append("")
-        doc_parts.append("Reviewed by: _________________ Date: _______")
-        doc_parts.append("")
-        doc_parts.append("Approved by: _________________ Date: _______")
-        
-        formatted_doc = "\n".join(doc_parts)
-        
-        logger.info(f"Formatted document with {len(content_sections)} sections")
-        
-        return formatted_doc
-    
-    async def execute(self, state: SOPState) -> SOPState:
-        """Execute formatter agent"""
-        try:
-            if not state.content_sections:
-                raise ValueError("No content sections available for formatting")
-            
-            formatted_doc = await self.format_document(
-                title=state.outline.title if state.outline else state.topic,
-                industry=state.industry,
-                target_audience=state.target_audience,
-                content_sections=state.content_sections
-            )
-            
-            state.formatted_document = formatted_doc
-            state.status = WorkflowStatus.FORMATTED
-            state.current_node = "formatter"
-            state.increment_tokens(800)  # Smaller model uses fewer tokens
-            
-        except Exception as e:
-            state.add_error(f"Formatting failed: {str(e)}")
-            state.status = WorkflowStatus.FAILED
-        
-        return state
+
+    # Signature block
+    doc_parts.append("**Approval Signatures**")
+    doc_parts.append("")
+    doc_parts.append("Prepared by: _________________ Date: _______")
+    doc_parts.append("")
+    doc_parts.append("Reviewed by: _________________ Date: _______")
+    doc_parts.append("")
+    doc_parts.append("Approved by: _________________ Date: _______")
+
+    return "\n".join(doc_parts)
 
 
-"""# Standalone node function for Strand StateGraph
-async def formatter_node(state: SOPState) -> SOPState:
-     agent = FormatterAgent()
-    return await agent.execute(state)"""
+# ---------------------------------------------------------------------------
+# Graph-level tool — called by the formatter_agent node
+# ---------------------------------------------------------------------------
 
 @tool
-async def formatter_tool(state: SOPState) -> SOPState:
-    #"""Planning tool: executes the PlanningAgent logic."""
-    agent = FormatterAgent()
-    return await agent.execute(state)
+async def run_formatting(prompt: str) -> str:
+    """Execute the SOP formatting step.
 
-# Create the actual graph node executor
+    Reads the SOPState identified by the workflow_id embedded in the prompt,
+    assembles the formatted markdown document from content_sections, saves it
+    to STATE_STORE, and returns a summary string for the next graph node.
+
+    Args:
+        prompt: The graph message string containing 'workflow_id::<id>'.
+    """
+    workflow_id = ""
+    if "workflow_id::" in prompt:
+        workflow_id = prompt.split("workflow_id::")[1].split()[0].strip()
+
+    state: SOPState = STATE_STORE.get(workflow_id)
+    if state is None:
+        return f"ERROR: no state found for workflow_id={workflow_id}"
+
+    try:
+        if not state.content_sections:
+            raise ValueError("No content sections available for formatting")
+
+        title = state.outline.title if state.outline else state.topic
+
+        formatted_doc = _build_document(
+            title=title,
+            industry=state.industry,
+            target_audience=state.target_audience,
+            content_sections=state.content_sections,
+        )
+
+        state.formatted_document = formatted_doc
+        state.status = WorkflowStatus.FORMATTED
+        state.current_node = "formatter"
+        state.increment_tokens(800)
+
+        logger.info("Formatting complete — %d chars | workflow_id=%s",
+                    len(formatted_doc), workflow_id)
+
+        return (
+            f"workflow_id::{workflow_id} | "
+            f"Formatting complete: document assembled with "
+            f"{len(state.content_sections)} sections ({len(formatted_doc)} chars)"
+        )
+
+    except Exception as e:
+        logger.error("Formatting failed: %s", e)
+        state.add_error(f"Formatting failed: {str(e)}")
+        state.status = WorkflowStatus.FAILED
+        return f"workflow_id::{workflow_id} | Formatting FAILED: {e}"
+
+
+# ---------------------------------------------------------------------------
+# The Agent node registered with GraphBuilder
+# ---------------------------------------------------------------------------
+
 formatter_agent = Agent(
-    tools=[formatter_tool],
-    #system_prompt="Plan SOP steps before research."
+    name="FormatterNode",
+    system_prompt=(
+        "You are the formatting node in an SOP generation pipeline. "
+        "When you receive a message, IMMEDIATELY call the run_formatting tool "
+        "with the full message as the prompt argument. "
+        "Do not add any commentary — just call the tool and return its result."
+    ),
+    tools=[run_formatting],
 )
