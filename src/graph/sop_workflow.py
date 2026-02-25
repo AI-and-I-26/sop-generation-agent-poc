@@ -8,13 +8,15 @@ Development Order: Step 14 (Final step!)
 """
 
 import logging
-from strands import StateGraph, END  # ✅ CORRECT: from strands (not langgraph!)
+#from strands import StateGraph
+from strands.multiagent.graph import Graph, GraphBuilder  # both are available
 from src.graph.state_schema import SOPState, WorkflowStatus
-from src.agents.planning_agent import planning_node
-from src.agents.research_agent import research_node
-from src.agents.content_agent import content_node
-from src.agents.formatter_agent import formatter_node
-from src.agents.qa_agent import qa_node
+#from src.agents.planning_agent import planning_node
+from src.agents.planning_agent import planning_agent
+from src.agents.research_agent import research_agent
+from src.agents.content_agent import content_agent
+from src.agents.formatter_agent import formatter_agent
+from src.agents.qa_agent import qa_agent
 
 logger = logging.getLogger(__name__)
 
@@ -50,58 +52,68 @@ def should_revise(state: SOPState) -> str:
     return "revise"
 
 
+
 def create_sop_workflow():
     """
-    Create SOP generation workflow using Strands StateGraph
-    
-    Workflow:
-    Planning → Research → Content → Format → QA → (Revise if needed) → End
-    
-    Returns:
-        Compiled Strands workflow
+    Planning → Research → Content → Formatter → QA → (Revise if needed) → End
     """
+   
+    gb = GraphBuilder()
+
+    #print("DEBUG planning_node =",planning_agent)
+    #print("TYPE =", type(planning_agent))
+
+    # Add agents
     
-    # Create Strands StateGraph
-    workflow = StateGraph(SOPState)  # ✅ From strands package
+    gb.add_node(planning_agent, "planning")
+    gb.add_node(research_agent, "research")
+    gb.add_node(content_agent, "content")
+    gb.add_node(formatter_agent, "formatter")
+    gb.add_node(qa_agent, "qa")
+
+    print("gb id:", id(gb))
+
+    # 1) Inspect registered node IDs (uses a private attr just for debugging)
+    node_ids = list(getattr(gb, "_nodes", {}).keys())
+    print("Registered nodes:", node_ids)
+
+    #print(gb.nodes)
+
     
-    # Add all agent nodes
-    workflow.add_node("planning", planning_node)
-    workflow.add_node("research", research_node)
-    workflow.add_node("content", content_node)
-    workflow.add_node("formatter", formatter_node)
-    workflow.add_node("qa", qa_node)
-    
-    # Set workflow entry point
-    workflow.set_entry_point("planning")
-    
-    # Define sequential edges
-    workflow.add_edge("planning", "research")
-    workflow.add_edge("research", "content")
-    workflow.add_edge("content", "formatter")
-    workflow.add_edge("formatter", "qa")
-    
-    # Conditional edge from QA
-    # If approved → END
-    # If needs revision → back to content
-    workflow.add_conditional_edges(
-        "qa",
-        should_revise,
-        {
-            "revise": "content",  # Loop back for revision
-            "finish": END  # ✅ END from strands
-        }
-    )
-    
-    # Compile the workflow
-    compiled_workflow = workflow.compile()
-    
-    logger.info("✓ SOP workflow compiled successfully")
-    
-    return compiled_workflow
+ # define the predicate
+    def should_revise(state) -> bool:
+        qa_result = state.results.get("qa")
+        if not qa_result:
+            return False
+        return bool(getattr(qa_result, "metadata", {}) or {}.get("needs_revision", False))
 
 
-# Create the workflow instance (singleton)
+    # Base DAG edges
+    gb.add_edge("planning", "research")
+    gb.add_edge("research", "content")
+    gb.add_edge("content", "formatter")
+    gb.add_edge("formatter", "qa")
+
+    # Conditional loop
+    gb.add_edge("qa", "content", condition=should_revise)
+
+    # Entry point
+    gb.set_entry_point("planning")
+
+    # Build the executable Strands graph
+  
+    workflow = gb.build()
+
+    logger.info("✓ SOP workflow built successfully")
+
+    return workflow
+
+
+# Create workflow instance
 sop_workflow = create_sop_workflow()
+
+print("DEBUG build result type:", type(sop_workflow))
+print("DEBUG entry points:", [n.node_id for n in sop_workflow.entry_points])
 
 
 async def generate_sop(
@@ -152,7 +164,7 @@ async def generate_sop(
     
     try:
         # Invoke workflow (Strands handles all execution)
-        final_state = await sop_workflow.ainvoke(initial_state)
+        final_state = await sop_workflow.invoke_async(initial_state)
         
         # Log results
         logger.info("=" * 70)
