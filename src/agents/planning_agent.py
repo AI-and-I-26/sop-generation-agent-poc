@@ -11,6 +11,12 @@ GRAPH INTEGRATION PATTERN:
        writes the result back to STATE_STORE, and returns a summary string.
     2. Its system_prompt instructs it to always call run_planning immediately.
   The Agent itself is registered with GraphBuilder as the "planning" node.
+
+BUG FIXED (this session):
+  The outer node Agent had no `model` parameter. Without a model it cannot
+  reason about tool use — it just serialises the tool call as a JSON string
+  and returns it as text without ever executing it. Adding BedrockModel to
+  the node Agent makes it actually invoke run_planning.
 """
 
 import os
@@ -26,19 +32,29 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Shared helper — builds a BedrockModel from env vars
+# ---------------------------------------------------------------------------
+
+def _bedrock_model(env_var: str, default_arn: str) -> BedrockModel:
+    return BedrockModel(
+        model_id=os.getenv(env_var, default_arn),
+        region=os.getenv("AWS_REGION", "us-east-2"),
+    )
+
+_DEFAULT_ARN = (
+    "arn:aws:bedrock:us-east-2:070797854596:"
+    "inference-profile/us.meta.llama3-3-70b-instruct-v1:0"
+)
+
+
+# ---------------------------------------------------------------------------
 # Inner LLM agent (does the actual outline generation — takes a string prompt)
 # ---------------------------------------------------------------------------
 
 def _make_llm_agent() -> Agent:
-    model_id = os.getenv(
-        "MODEL_PLANNING",
-        "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0",
-    )
-    region = os.getenv("AWS_REGION", "us-east-2")
-
     return Agent(
         name="PlanningLLM",
-        model=BedrockModel(model_id=model_id, region=region),
+        model=_bedrock_model("MODEL_PLANNING", _DEFAULT_ARN),
         system_prompt="""You are an expert SOP planning agent.
 Create comprehensive, well-structured outlines for Standard Operating Procedures.
 
@@ -84,7 +100,6 @@ async def run_planning(prompt: str) -> str:
     Args:
         prompt: The graph message string containing 'workflow_id::<id>'.
     """
-    # Extract workflow_id from prompt
     workflow_id = ""
     if "workflow_id::" in prompt:
         workflow_id = prompt.split("workflow_id::")[1].split()[0].strip()
@@ -108,7 +123,6 @@ async def run_planning(prompt: str) -> str:
         response = await llm.invoke_async(user_prompt)
         response_text = str(response).strip()
 
-        # Strip markdown code fences if present
         if response_text.startswith("```"):
             response_text = response_text.split("```")[1]
             if response_text.startswith("json"):
@@ -140,10 +154,12 @@ async def run_planning(prompt: str) -> str:
 
 # ---------------------------------------------------------------------------
 # The Agent node registered with GraphBuilder
+# FIX: node Agent must have a model so it can actually invoke the tool.
 # ---------------------------------------------------------------------------
 
 planning_agent = Agent(
     name="PlanningNode",
+    model=_bedrock_model("MODEL_PLANNING", _DEFAULT_ARN),
     system_prompt=(
         "You are the planning node in an SOP generation pipeline. "
         "When you receive a message, IMMEDIATELY call the run_planning tool "

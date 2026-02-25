@@ -2,19 +2,11 @@
 QA Agent - Module 5, Section 5.1
 
 Quality assurance agent that reviews SOP documents.
-Uses Strand Agent with JSON schema for structured scoring.
 
-GRAPH INTEGRATION PATTERN: same as planning_agent.py — see that file for the
-full explanation.
+GRAPH INTEGRATION PATTERN: same as planning_agent.py — see that file.
 
-BUGS FIXED vs original:
-  1. response.content        → str(response)   (AgentResult has no .content)
-  2. self.agent.ainvoke()    → llm.invoke_async()  (Strands uses invoke_async,
-                               not ainvoke — that's a LangChain method name)
-  3. temperature=0.5         → removed          (not a valid Strands Agent kwarg)
-  4. response_format={...}   → removed          (not a valid Strands Agent kwarg)
-  5. qa_tool / Agent(tools=[qa_tool]) pattern replaced with the two-layer
-     STATE_STORE pattern so the graph node receives a string, not a SOPState.
+BUG FIXED (this session):
+  The outer node Agent had no `model` parameter — see planning_agent.py.
 """
 
 import os
@@ -29,21 +21,26 @@ from src.agents.state_store import STATE_STORE
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_ARN = (
+    "arn:aws:bedrock:us-east-2:070797854596:"
+    "inference-profile/us.meta.llama3-3-70b-instruct-v1:0"
+)
+
+def _bedrock_model(env_var: str) -> BedrockModel:
+    return BedrockModel(
+        model_id=os.getenv(env_var, _DEFAULT_ARN),
+        region=os.getenv("AWS_REGION", "us-east-2"),
+    )
+
 
 # ---------------------------------------------------------------------------
 # Inner LLM agent (string prompt in → string JSON out)
 # ---------------------------------------------------------------------------
 
 def _make_llm_agent() -> Agent:
-    model_id = os.getenv(
-        "MODEL_QA",
-        "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0",
-    )
-    region = os.getenv("AWS_REGION", "us-east-2")
-
     return Agent(
         name="QALLM",
-        model=BedrockModel(model_id=model_id, region=region),
+        model=_bedrock_model("MODEL_QA"),
         system_prompt="""You are a quality assurance specialist for Standard Operating Procedures.
 
 EVALUATION CRITERIA (each scored 0-10):
@@ -106,7 +103,6 @@ async def run_qa(prompt: str) -> str:
 
         llm = _make_llm_agent()
 
-        # Truncate document sample to stay within context limits
         doc_sample = (
             state.formatted_document[:3000] + "..."
             if len(state.formatted_document) > 3000
@@ -127,12 +123,9 @@ async def run_qa(prompt: str) -> str:
             f"Return complete JSON with all required fields."
         )
 
-        # FIX: use invoke_async (not ainvoke — that's a LangChain method)
-        # FIX: use str(response) not response.content
         response = await llm.invoke_async(qa_prompt)
         response_text = str(response).strip()
 
-        # Strip markdown code fences if present
         if response_text.startswith("```"):
             response_text = response_text.split("```")[1]
             if response_text.startswith("json"):
@@ -158,7 +151,6 @@ async def run_qa(prompt: str) -> str:
 
     except Exception as e:
         logger.error("QA review failed: %s", e)
-        # Write a default failing QAResult so the workflow can still terminate
         state.qa_result = QAResult(
             score=5.0,
             feedback=f"QA review error: {str(e)}",
@@ -177,10 +169,12 @@ async def run_qa(prompt: str) -> str:
 
 # ---------------------------------------------------------------------------
 # The Agent node registered with GraphBuilder
+# FIX: node Agent must have a model so it can actually invoke the tool.
 # ---------------------------------------------------------------------------
 
 qa_agent = Agent(
     name="QANode",
+    model=_bedrock_model("MODEL_QA"),
     system_prompt=(
         "You are the quality assurance node in an SOP generation pipeline. "
         "When you receive a message, IMMEDIATELY call the run_qa tool "

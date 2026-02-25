@@ -2,20 +2,13 @@
 Formatter Agent - Module 5, Section 5.1
 
 Formats final SOP document using Strand Agent.
-Uses smaller/cheaper model (Llama 8B) for cost optimization.
 
-GRAPH INTEGRATION PATTERN: same as planning_agent.py — see that file for the
-full explanation.
+GRAPH INTEGRATION PATTERN: same as planning_agent.py — see that file.
 
-BUGS FIXED vs original:
-  1. temperature=0.3         → removed          (not a valid Strands Agent kwarg)
-  2. response_format={...}   → removed          (not a valid Strands Agent kwarg)
-  3. formatter_tool / Agent(tools=[formatter_tool]) pattern replaced with the
-     two-layer STATE_STORE pattern so the graph node receives a string, not
-     a SOPState object.
-  Note: FormatterAgent.format_document() never called the LLM — it built the
-  document purely in Python. That pure-Python logic is preserved here inside
-  run_formatting; no LLM call is needed for this step.
+BUG FIXED (this session):
+  The outer node Agent had no `model` parameter — see planning_agent.py.
+  Note: the formatting step is pure Python (no LLM call needed), but the
+  node Agent still requires a model to be able to invoke its tool.
 """
 
 import os
@@ -30,6 +23,17 @@ from src.agents.state_store import STATE_STORE
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_ARN = (
+    "arn:aws:bedrock:us-east-2:070797854596:"
+    "inference-profile/us.meta.llama3-3-70b-instruct-v1:0"
+)
+
+def _bedrock_model(env_var: str) -> BedrockModel:
+    return BedrockModel(
+        model_id=os.getenv(env_var, _DEFAULT_ARN),
+        region=os.getenv("AWS_REGION", "us-east-2"),
+    )
+
 
 # ---------------------------------------------------------------------------
 # Pure-Python formatting logic (no LLM needed for this step)
@@ -41,10 +45,8 @@ def _build_document(
     target_audience: str,
     content_sections: dict,
 ) -> str:
-    """Assemble the final markdown SOP document from its parts."""
     doc_parts = []
 
-    # Title and metadata
     doc_parts.append(f"# {title}")
     doc_parts.append("")
     doc_parts.append("**Document Control**")
@@ -57,7 +59,6 @@ def _build_document(
     doc_parts.append("---")
     doc_parts.append("")
 
-    # Table of contents
     doc_parts.append("## Table of Contents")
     doc_parts.append("")
     for i, section_title in enumerate(content_sections.keys(), 1):
@@ -66,7 +67,6 @@ def _build_document(
     doc_parts.append("---")
     doc_parts.append("")
 
-    # All sections
     for section_title, content in content_sections.items():
         doc_parts.append(f"## {section_title}")
         doc_parts.append("")
@@ -75,7 +75,6 @@ def _build_document(
         doc_parts.append("---")
         doc_parts.append("")
 
-    # Signature block
     doc_parts.append("**Approval Signatures**")
     doc_parts.append("")
     doc_parts.append("Prepared by: _________________ Date: _______")
@@ -146,10 +145,12 @@ async def run_formatting(prompt: str) -> str:
 
 # ---------------------------------------------------------------------------
 # The Agent node registered with GraphBuilder
+# FIX: node Agent must have a model so it can actually invoke the tool.
 # ---------------------------------------------------------------------------
 
 formatter_agent = Agent(
     name="FormatterNode",
+    model=_bedrock_model("MODEL_FORMATTER"),
     system_prompt=(
         "You are the formatting node in an SOP generation pipeline. "
         "When you receive a message, IMMEDIATELY call the run_formatting tool "

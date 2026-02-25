@@ -3,18 +3,10 @@ Content Agent - Module 5, Section 5.1
 
 Generates detailed SOP content using Strand Agent with few-shot prompting.
 
-GRAPH INTEGRATION PATTERN: same as planning_agent.py.
-  - content_agent  : the Agent node registered with GraphBuilder
-  - run_content    : @tool that reads/writes STATE_STORE, calls the inner LLM
-  - _make_llm_agent: builds the inner Agent that receives a plain string prompt
+GRAPH INTEGRATION PATTERN: same as planning_agent.py — see that file.
 
-BUGS FIXED vs original:
-  1. response.content        → str(response)   (AgentResult has no .content)
-  2. temperature=0.8         → removed          (not a valid Strands Agent kwarg)
-  3. response_format={...}   → removed          (not a valid Strands Agent kwarg)
-  4. content_tool / Agent(tools=[content_tool]) pattern replaced with the
-     two-layer STATE_STORE pattern so the graph node receives a string, not
-     a SOPState object.
+BUG FIXED (this session):
+  The outer node Agent had no `model` parameter — see planning_agent.py.
 """
 
 import os
@@ -30,21 +22,26 @@ from src.agents.state_store import STATE_STORE
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_ARN = (
+    "arn:aws:bedrock:us-east-2:070797854596:"
+    "inference-profile/us.meta.llama3-3-70b-instruct-v1:0"
+)
+
+def _bedrock_model(env_var: str) -> BedrockModel:
+    return BedrockModel(
+        model_id=os.getenv(env_var, _DEFAULT_ARN),
+        region=os.getenv("AWS_REGION", "us-east-2"),
+    )
+
 
 # ---------------------------------------------------------------------------
 # Inner LLM agent (string prompt in → string JSON out)
 # ---------------------------------------------------------------------------
 
 def _make_llm_agent() -> Agent:
-    model_id = os.getenv(
-        "MODEL_CONTENT",
-        "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0",
-    )
-    region = os.getenv("AWS_REGION", "us-east-2")
-
     return Agent(
         name="ContentLLM",
-        model=BedrockModel(model_id=model_id, region=region),
+        model=_bedrock_model("MODEL_CONTENT"),
         system_prompt="""You are a technical writer specializing in Standard Operating Procedures.
 
 WRITING STYLE:
@@ -106,10 +103,7 @@ async def run_content(prompt: str) -> str:
 
         content_sections = {}
 
-        # Generate content for first 5 sections (or all if fewer)
-        sections_to_generate = state.outline.sections[:5]
-
-        for section in sections_to_generate:
+        for section in state.outline.sections[:5]:
             section_prompt = (
                 f"Write detailed content for this SOP section:\n\n"
                 f"Section: {section.title}\n"
@@ -126,11 +120,9 @@ async def run_content(prompt: str) -> str:
                 f"Return complete JSON with all required fields."
             )
 
-            # FIX: str(response) not response.content
             response = await llm.invoke_async(section_prompt)
             response_text = str(response).strip()
 
-            # Strip markdown code fences if present
             if response_text.startswith("```"):
                 response_text = response_text.split("```")[1]
                 if response_text.startswith("json"):
@@ -165,10 +157,12 @@ async def run_content(prompt: str) -> str:
 
 # ---------------------------------------------------------------------------
 # The Agent node registered with GraphBuilder
+# FIX: node Agent must have a model so it can actually invoke the tool.
 # ---------------------------------------------------------------------------
 
 content_agent = Agent(
     name="ContentNode",
+    model=_bedrock_model("MODEL_CONTENT"),
     system_prompt=(
         "You are the content generation node in an SOP generation pipeline. "
         "When you receive a message, IMMEDIATELY call the run_content tool "

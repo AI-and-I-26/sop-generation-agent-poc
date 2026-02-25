@@ -4,8 +4,10 @@ Research Agent - Module 5, Section 5.1
 Performs research using RAG (Bedrock Knowledge Base) and other tools.
 
 GRAPH INTEGRATION PATTERN: same as planning_agent.py — see that file for the
-full explanation.  The outer Agent (research_agent) is the graph node; it
-calls run_research via tool, which reads/writes STATE_STORE.
+full explanation.
+
+BUG FIXED (this session):
+  The outer node Agent had no `model` parameter — see planning_agent.py.
 """
 
 import os
@@ -20,6 +22,17 @@ from src.graph.state_schema import SOPState, ResearchFindings, WorkflowStatus
 from src.agents.state_store import STATE_STORE
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_ARN = (
+    "arn:aws:bedrock:us-east-2:070797854596:"
+    "inference-profile/us.meta.llama3-3-70b-instruct-v1:0"
+)
+
+def _bedrock_model(env_var: str) -> BedrockModel:
+    return BedrockModel(
+        model_id=os.getenv(env_var, _DEFAULT_ARN),
+        region=os.getenv("AWS_REGION", "us-east-2"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -86,19 +99,13 @@ def get_compliance_requirements(industry: str, topic: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Inner LLM agent (string prompt in → string findings out)
+# Inner LLM agent (string prompt in → string JSON out)
 # ---------------------------------------------------------------------------
 
 def _make_llm_agent() -> Agent:
-    model_id = os.getenv(
-        "MODEL_RESEARCH",
-        "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0",
-    )
-    region = os.getenv("AWS_REGION", "us-east-2")
-
     return Agent(
         name="ResearchLLM",
-        model=BedrockModel(model_id=model_id, region=region),
+        model=_bedrock_model("MODEL_RESEARCH"),
         system_prompt="""You are a research specialist for SOP development.
 Find relevant information from knowledge bases and compliance databases.
 
@@ -164,7 +171,6 @@ async def run_research(prompt: str) -> str:
         response = await llm.invoke_async(research_prompt)
         response_text = str(response).strip()
 
-        # Strip markdown code fences if present
         if response_text.startswith("```"):
             response_text = response_text.split("```")[1]
             if response_text.startswith("json"):
@@ -197,10 +203,12 @@ async def run_research(prompt: str) -> str:
 
 # ---------------------------------------------------------------------------
 # The Agent node registered with GraphBuilder
+# FIX: node Agent must have a model so it can actually invoke the tool.
 # ---------------------------------------------------------------------------
 
 research_agent = Agent(
     name="ResearchNode",
+    model=_bedrock_model("MODEL_RESEARCH"),
     system_prompt=(
         "You are the research node in an SOP generation pipeline. "
         "When you receive a message, IMMEDIATELY call the run_research tool "
