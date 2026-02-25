@@ -8,53 +8,121 @@ Uses Strand Agent with Tool integration.
 import os
 import json
 import logging
-from typing import Dict, List,Callable,Any
-from strands import Agent,tool
-#from strands.tools import Tool
-from strands import tool
-#from strands.types import ModelConfig
-from strands.models import BedrockModel
+from typing import Dict
 
+from strands import Agent, tool
+from strands.models import BedrockModel
 
 from src.graph.state_schema import SOPState, ResearchFindings, WorkflowStatus
 
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# FIX: Tool definitions must be module-level @tool-decorated functions.
+#
+# The original code defined tools inside helper methods (_create_kb_search_tool,
+# _create_compliance_tool) and then wrapped them in a Tool() constructor call.
+# Two problems:
+#   1. `Tool` was never imported (the import line was commented out), causing
+#      a NameError at runtime.
+#   2. Strands does not use a Tool() wrapper at all — you simply pass the
+#      @tool-decorated callable directly to Agent(tools=[...]).
+#
+# Solution: move the logic to module-level @tool functions and pass them
+# straight to the Agent constructor.
+# ---------------------------------------------------------------------------
+
+@tool
+def search_knowledge_base(query: str, max_results: int = 5) -> str:
+    """Search Bedrock Knowledge Base for similar SOPs and procedures.
+
+    Args:
+        query: The search query string.
+        max_results: Maximum number of results to return (default 5).
+    """
+    import boto3
+
+    try:
+        kb_client = boto3.client(
+            "bedrock-agent-runtime",
+            region_name=os.getenv("AWS_REGION", "us-east-1"),
+        )
+        kb_id = os.getenv("KNOWLEDGE_BASE_ID")
+
+        response = kb_client.retrieve(
+            knowledgeBaseId=kb_id,
+            retrievalQuery={"text": query},
+            retrievalConfiguration={
+                "vectorSearchConfiguration": {"numberOfResults": max_results}
+            },
+        )
+
+        results = []
+        for result in response.get("retrievalResults", []):
+            results.append({
+                "content": result["content"]["text"],
+                "score": result["score"],
+                "source": result.get("location", {})
+                    .get("s3Location", {})
+                    .get("uri", "Unknown"),
+            })
+
+        return json.dumps(results)
+
+    except Exception as e:
+        logger.error("KB search error: %s", e)
+        return json.dumps({"error": str(e)})
+
+
+@tool
+def get_compliance_requirements(industry: str, topic: str) -> str:
+    """Get compliance and regulatory requirements for an industry and topic.
+
+    Args:
+        industry: The industry name (e.g. 'Manufacturing', 'Healthcare').
+        topic: The SOP topic for which compliance is needed.
+    """
+    # Placeholder — replace with a real compliance API call as needed
+    compliance_map = {
+        "Manufacturing": ["OSHA 1910", "ISO 9001"],
+        "Healthcare": ["HIPAA", "FDA 21 CFR"],
+        "Laboratory": ["CLIA", "CAP Standards"],
+    }
+    requirements = compliance_map.get(industry, ["General Safety"])
+    return json.dumps({"industry": industry, "requirements": requirements})
+
+
+# ---------------------------------------------------------------------------
+# ResearchAgent class
+# ---------------------------------------------------------------------------
+
 class ResearchAgent:
     """
-    Research Agent using Strand SDK with Tools
-    
-    Searches knowledge bases and retrieves relevant information
-    for SOP generation.
+    Research Agent using Strand SDK with Tools.
+    Searches knowledge bases and retrieves relevant information for SOP generation.
     """
-    
-    def __init__(self):
-        """Initialize Research Agent with Strand and Tools"""
-               
-        # Define tools for the agent
-        tools = [
-            self._create_kb_search_tool(),
-            self._create_compliance_tool()
-        ]
-       
-        model_id = os.getenv("MODEL_RESEARCH", "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0")
-        region   = os.getenv("AWS_REGION", "us-east-2")
 
+    def __init__(self):
+        model_id = os.getenv(
+            "MODEL_RESEARCH",
+            "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0",
+        )
+        region = os.getenv("AWS_REGION", "us-east-2")
+
+        # FIX: Removed unsupported `temperature` and `response_format` kwargs.
+        # Pass @tool functions directly — no Tool() wrapper needed.
         self.agent = Agent(
             name="ResearchAgent",
             model=BedrockModel(model_id=model_id, region=region),
             system_prompt=self._get_system_prompt(),
-            tools=tools,  # Strand handles tool calling
-            temperature=0.5,
+            tools=[search_knowledge_base, get_compliance_requirements],
             max_tokens=2048,
-            response_format={"type": "json_object"}
         )
-        
+
         logger.info("Initialized ResearchAgent with RAG tools")
-    
+
     def _get_system_prompt(self) -> str:
-        """Get system prompt for research agent"""
         return """You are a research specialist for SOP development.
 
 Your job is to find relevant information from knowledge bases and compliance databases.
@@ -84,106 +152,9 @@ Return JSON with:
   "sources": ["Source 1"]
 }
 """
-    
-    
-    def _create_kb_search_tool(self) -> Callable[..., Any]:
-        """Create and return the Knowledge Base search tool (as a decorated function)."""
-        @tool
-        def search_kb(query: str, max_results: int = 5) -> str:
-            """Search Bedrock Knowledge Base"""
-            import boto3
-            
-            try:
-                kb_client = boto3.client('bedrock-agent-runtime', 
-                                        region_name=os.getenv('AWS_REGION', 'us-east-1'))
-                kb_id = os.getenv('KNOWLEDGE_BASE_ID')
-                
-                response = kb_client.retrieve(
-                    knowledgeBaseId=kb_id,
-                    retrievalQuery={'text': query},
-                    retrievalConfiguration={
-                        'vectorSearchConfiguration': {
-                            'numberOfResults': max_results
-                        }
-                    }
-                )
-                
-                results = []
-                for result in response.get('retrievalResults', []):
-                    results.append({
-                        'content': result['content']['text'],
-                        'score': result['score'],
-                        'source': result.get('location', {}).get('s3Location', {}).get('uri', 'Unknown')
-                    })
-                
-                return json.dumps(results)
-                
-            except Exception as e:
-                logger.error(f"KB search error: {e}")
-                return json.dumps({"error": str(e)})
-        
-        return Tool(
-            name="search_knowledge_base",
-            description="Search Bedrock Knowledge Base for similar SOPs and procedures",
-            function=search_kb,
-            parameters={
-                "query": {
-                    "type": "string",
-                    "description": "Search query"
-                },
-                "max_results": {
-                    "type": "integer",
-                    "description": "Maximum number of results (default 5)"
-                }
-            }
-        )
-    
-    def _create_compliance_tool(self) -> Callable[..., Any]:
-        """Create compliance requirements tool"""        
-        @tool
-        def get_compliance(industry: str, topic: str) -> str:
-            """Get compliance requirements"""
-            # Placeholder - integrate with compliance API
-            compliance_map = {
-                "Manufacturing": ["OSHA 1910", "ISO 9001"],
-                "Healthcare": ["HIPAA", "FDA 21 CFR"],
-                "Laboratory": ["CLIA", "CAP Standards"]
-            }
-            
-            requirements = compliance_map.get(industry, ["General Safety"])
-            return json.dumps({
-                "industry": industry,
-                "requirements": requirements
-            })
-        
-        return Tool(
-            name="get_compliance_requirements",
-            description="Get relevant compliance and regulatory requirements",
-            function=get_compliance,
-            parameters={
-                "industry": {"type": "string"},
-                "topic": {"type": "string"}
-            }
-        )
-    
-    async def conduct_research(
-        self,
-        topic: str,
-        industry: str,
-        outline: Dict
-    ) -> ResearchFindings:
-        """
-        Conduct research using tools
-        
-        Args:
-            topic: SOP topic
-            industry: Industry domain
-            outline: Outline to research
-            
-        Returns:
-            ResearchFindings object
-        """
-        
+
+    async def conduct_research(self, topic: str, industry: str, outline: Dict) -> ResearchFindings:
+
         prompt = f"""Research the following SOP topic:
 
 Topic: {topic}
@@ -195,60 +166,57 @@ Use the available tools to:
 3. Identify best practices
 
 Return comprehensive research findings in JSON format."""
-        
-        try:
-            # Invoke agent (Strand handles tool calling automatically)
-            response = await self.agent.invoke_async(prompt)
-            
-            # Parse response
-            findings_data = json.loads(response.content)
-            
-            # Validate with Pydantic
-            findings = ResearchFindings(**findings_data)
-            
-            logger.info(f"Research found {len(findings.similar_sops)} similar SOPs")
-            
-            return findings
-            
-        except Exception as e:
-            logger.error(f"Research failed: {e}")
-            raise
-    
+
+        # FIX: Strands AgentResult must be converted with str() — NOT .content
+        response = await self.agent.invoke_async(prompt)
+        response_text = str(response).strip()
+
+        # Strip markdown code fences if present
+        if response_text.startswith("```"):
+            response_text = response_text.split("```")[1]
+            if response_text.startswith("json"):
+                response_text = response_text[4:]
+            response_text = response_text.strip()
+
+        findings_data = json.loads(response_text)
+        findings = ResearchFindings(**findings_data)
+
+        logger.info("Research found %d similar SOPs", len(findings.similar_sops))
+        return findings
+
     async def execute(self, state: SOPState) -> SOPState:
-        """Execute research agent"""
         try:
             findings = await self.conduct_research(
                 topic=state.topic,
                 industry=state.industry,
-                outline=state.outline.dict() if state.outline else {}
+                outline=state.outline.dict() if state.outline else {},
             )
-            
             state.research = findings
             state.status = WorkflowStatus.RESEARCHED
             state.current_node = "research"
             state.increment_tokens(2000)
-            
+
         except Exception as e:
+            logger.error("Research failed: %s", e)
             state.add_error(f"Research failed: {str(e)}")
             state.status = WorkflowStatus.FAILED
-        
+
         return state
 
-"""
-# Standalone node function for Strand StateGraph
-async def research_node(state: SOPState) -> SOPState:
-    agent = ResearchAgent()
-    return await agent.execute(state) """
 
-    
+# ---------------------------------------------------------------------------
+# Graph node wiring
+# ---------------------------------------------------------------------------
+
 @tool
 async def research_tool(state: SOPState) -> SOPState:
-    #"""Planning tool: executes the PlanningAgent logic."""
+    """Research tool: executes the ResearchAgent logic."""
     agent = ResearchAgent()
     return await agent.execute(state)
 
-# Create the actual graph node executor
+
+# This Agent is what gets imported by sop_workflow.py and added as a graph node.
+# GraphBuilder requires an Agent instance — NOT the raw research_tool function.
 research_agent = Agent(
     tools=[research_tool],
-    #system_prompt="Plan SOP steps before research."
 )
