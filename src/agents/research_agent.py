@@ -2,7 +2,10 @@
 Research Agent - Module 5, Section 5.1
 
 Performs research using RAG (Bedrock Knowledge Base) and other tools.
-Uses Strand Agent with Tool integration.
+
+GRAPH INTEGRATION PATTERN: same as planning_agent.py — see that file for the
+full explanation.  The outer Agent (research_agent) is the graph node; it
+calls run_research via tool, which reads/writes STATE_STORE.
 """
 
 import os
@@ -14,13 +17,13 @@ from strands import Agent, tool
 from strands.models import BedrockModel
 
 from src.graph.state_schema import SOPState, ResearchFindings, WorkflowStatus
+from src.agents.state_store import STATE_STORE
 
 logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Tool definitions — module-level @tool decorated functions.
-# Pass these directly to Agent(tools=[...]); no Tool() wrapper needed.
+# Domain tools used by the inner LLM agent
 # ---------------------------------------------------------------------------
 
 @tool
@@ -73,7 +76,6 @@ def get_compliance_requirements(industry: str, topic: str) -> str:
         industry: The industry name (e.g. 'Manufacturing', 'Healthcare').
         topic: The SOP topic for which compliance is needed.
     """
-    # Placeholder — replace with a real compliance API call as needed
     compliance_map = {
         "Manufacturing": ["OSHA 1910", "ISO 9001"],
         "Healthcare": ["HIPAA", "FDA 21 CFR"],
@@ -84,79 +86,82 @@ def get_compliance_requirements(industry: str, topic: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# ResearchAgent class
+# Inner LLM agent (string prompt in → string findings out)
 # ---------------------------------------------------------------------------
 
-class ResearchAgent:
-    """
-    Research Agent using Strand SDK with Tools.
-    Searches knowledge bases and retrieves relevant information for SOP generation.
-    """
+def _make_llm_agent() -> Agent:
+    model_id = os.getenv(
+        "MODEL_RESEARCH",
+        "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0",
+    )
+    region = os.getenv("AWS_REGION", "us-east-2")
 
-    def __init__(self):
-        model_id = os.getenv(
-            "MODEL_RESEARCH",
-            "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0",
-        )
-        region = os.getenv("AWS_REGION", "us-east-2")
+    return Agent(
+        name="ResearchLLM",
+        model=BedrockModel(model_id=model_id, region=region),
+        system_prompt="""You are a research specialist for SOP development.
+Find relevant information from knowledge bases and compliance databases.
 
-        self.agent = Agent(
-            name="ResearchAgent",
-            model=BedrockModel(model_id=model_id, region=region),
-            system_prompt=self._get_system_prompt(),
-            tools=[search_knowledge_base, get_compliance_requirements],
-            max_tokens=2048,
-        )
+TOOLS: search_knowledge_base, get_compliance_requirements
 
-        logger.info("Initialized ResearchAgent with RAG tools")
-
-    def _get_system_prompt(self) -> str:
-        return """You are a research specialist for SOP development.
-
-Your job is to find relevant information from knowledge bases and compliance databases.
-
-TOOLS AVAILABLE:
-- search_knowledge_base: Search for similar SOPs and procedures
-- get_compliance_requirements: Fetch regulatory requirements
-
-RESEARCH STRATEGY:
+STRATEGY:
 1. Search knowledge base for similar SOPs
-2. Identify compliance requirements
-3. Extract best practices
-4. Cite all sources
+2. Get compliance requirements for the industry
+3. Extract best practices and cite sources
 
-OUTPUT FORMAT:
-Return JSON with:
+OUTPUT FORMAT — Return JSON only:
 {
-  "similar_sops": [
-    {
-      "title": "SOP Title",
-      "relevance": 0.95,
-      "key_points": ["Point 1", "Point 2"]
-    }
-  ],
-  "compliance_requirements": ["Regulation 1", "Regulation 2"],
+  "similar_sops": [{"title": "...", "relevance": 0.95, "key_points": ["..."]}],
+  "compliance_requirements": ["Regulation 1"],
   "best_practices": ["Best practice 1"],
   "sources": ["Source 1"]
-}
-"""
+}""",
+        tools=[search_knowledge_base, get_compliance_requirements],
+        max_tokens=2048,
+    )
 
-    async def conduct_research(self, topic: str, industry: str, outline: Dict) -> ResearchFindings:
 
-        prompt = f"""Research the following SOP topic:
+# ---------------------------------------------------------------------------
+# Graph-level tool — called by the research_agent node
+# ---------------------------------------------------------------------------
 
-Topic: {topic}
-Industry: {industry}
+@tool
+async def run_research(prompt: str) -> str:
+    """Execute the SOP research step.
 
-Use the available tools to:
-1. Search for similar SOPs in the knowledge base
-2. Get compliance requirements for this industry
-3. Identify best practices
+    Reads the SOPState identified by the workflow_id embedded in the prompt,
+    conducts research using knowledge base and compliance tools, saves findings
+    to STATE_STORE, and returns a summary string for the next graph node.
 
-Return comprehensive research findings in JSON format."""
+    Args:
+        prompt: The graph message string containing 'workflow_id::<id>'.
+    """
+    workflow_id = ""
+    if "workflow_id::" in prompt:
+        workflow_id = prompt.split("workflow_id::")[1].split()[0].strip()
 
-        # invoke_async returns an AgentResult — use str() to extract text
-        response = await self.agent.invoke_async(prompt)
+    state: SOPState = STATE_STORE.get(workflow_id)
+    if state is None:
+        return f"ERROR: no state found for workflow_id={workflow_id}"
+
+    try:
+        llm = _make_llm_agent()
+
+        outline_summary = ""
+        if state.outline:
+            sections = [s.title for s in (state.outline.sections or [])]
+            outline_summary = f"Outline sections: {', '.join(sections[:5])}"
+
+        research_prompt = (
+            f"Research the following SOP topic:\n"
+            f"Topic: {state.topic}\n"
+            f"Industry: {state.industry}\n"
+            f"{outline_summary}\n\n"
+            f"Use the available tools to search the knowledge base and get "
+            f"compliance requirements. Return findings as JSON."
+        )
+
+        response = await llm.invoke_async(research_prompt)
         response_text = str(response).strip()
 
         # Strip markdown code fences if present
@@ -169,35 +174,38 @@ Return comprehensive research findings in JSON format."""
         findings_data = json.loads(response_text)
         findings = ResearchFindings(**findings_data)
 
-        logger.info("Research found %d similar SOPs", len(findings.similar_sops))
-        return findings
+        state.research = findings
+        state.status = WorkflowStatus.RESEARCHED
+        state.current_node = "research"
+        state.increment_tokens(2000)
 
-    async def execute(self, state: SOPState) -> SOPState:
-        try:
-            findings = await self.conduct_research(
-                topic=state.topic,
-                industry=state.industry,
-                outline=state.outline.dict() if state.outline else {},
-            )
-            state.research = findings
-            state.status = WorkflowStatus.RESEARCHED
-            state.current_node = "research"
-            state.increment_tokens(2000)
+        logger.info("Research complete — %d similar SOPs | workflow_id=%s",
+                    len(findings.similar_sops), workflow_id)
 
-        except Exception as e:
-            logger.error("Research failed: %s", e)
-            state.add_error(f"Research failed: {str(e)}")
-            state.status = WorkflowStatus.FAILED
+        return (
+            f"workflow_id::{workflow_id} | "
+            f"Research complete: found {len(findings.similar_sops)} similar SOPs, "
+            f"{len(findings.compliance_requirements)} compliance requirements"
+        )
 
-        return state
+    except Exception as e:
+        logger.error("Research failed: %s", e)
+        state.add_error(f"Research failed: {str(e)}")
+        state.status = WorkflowStatus.FAILED
+        return f"workflow_id::{workflow_id} | Research FAILED: {e}"
 
 
 # ---------------------------------------------------------------------------
-# FIX: Graph node must be a plain async function (SOPState) -> SOPState.
-# Same root cause as planning_agent.py — see comment there for full explanation.
+# The Agent node registered with GraphBuilder
 # ---------------------------------------------------------------------------
 
-async def research_node(state: SOPState) -> SOPState:
-    """Graph node function for the research step."""
-    agent = ResearchAgent()
-    return await agent.execute(state)
+research_agent = Agent(
+    name="ResearchNode",
+    system_prompt=(
+        "You are the research node in an SOP generation pipeline. "
+        "When you receive a message, IMMEDIATELY call the run_research tool "
+        "with the full message as the prompt argument. "
+        "Do not add any commentary — just call the tool and return its result."
+    ),
+    tools=[run_research],
+)

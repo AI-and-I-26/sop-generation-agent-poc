@@ -2,45 +2,45 @@
 Planning Agent - Module 4, Section 4.2
 
 Creates structured SOP outlines using Strand Agent with JSON schema enforcement.
+
+GRAPH INTEGRATION PATTERN:
+  The Strands graph only supports Agent instances as nodes, and passes plain
+  string messages between them (not SOPState objects).  This Agent:
+    1. Has a @tool (run_planning) that extracts the workflow_id from the
+       string prompt, fetches SOPState from STATE_STORE, does the work,
+       writes the result back to STATE_STORE, and returns a summary string.
+    2. Its system_prompt instructs it to always call run_planning immediately.
+  The Agent itself is registered with GraphBuilder as the "planning" node.
 """
 
 import os
 import json
 import logging
-from strands import Agent
+from strands import Agent, tool
 from strands.models import BedrockModel
 
 from src.graph.state_schema import SOPState, SOPOutline, WorkflowStatus
+from src.agents.state_store import STATE_STORE
 
 logger = logging.getLogger(__name__)
 
 
-class PlanningAgent:
-    """
-    Planning Agent using Strand SDK.
-    Generates comprehensive SOP outlines with proper structure.
-    """
+# ---------------------------------------------------------------------------
+# Inner LLM agent (does the actual outline generation — takes a string prompt)
+# ---------------------------------------------------------------------------
 
-    def __init__(self):
-        model_id = os.getenv(
-            "MODEL_PLANNING",
-            "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0",
-        )
-        region = os.getenv("AWS_REGION", "us-east-2")
+def _make_llm_agent() -> Agent:
+    model_id = os.getenv(
+        "MODEL_PLANNING",
+        "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0",
+    )
+    region = os.getenv("AWS_REGION", "us-east-2")
 
-        self.agent = Agent(
-            name="PlanningAgent",
-            model=BedrockModel(model_id=model_id, region=region),
-            system_prompt=self._get_system_prompt(),
-            max_tokens=2048,
-        )
-
-        logger.info("Initialized PlanningAgent with model: %s", model_id)
-
-    def _get_system_prompt(self) -> str:
-        return """You are an expert SOP planning agent.
-
-Your job is to create comprehensive, well-structured outlines for Standard Operating Procedures.
+    return Agent(
+        name="PlanningLLM",
+        model=BedrockModel(model_id=model_id, region=region),
+        system_prompt="""You are an expert SOP planning agent.
+Create comprehensive, well-structured outlines for Standard Operating Procedures.
 
 MANDATORY SECTIONS (in order):
 1. Purpose and Scope
@@ -55,46 +55,60 @@ MANDATORY SECTIONS (in order):
 10. References and Related Documents
 11. Revision History
 
-OUTPUT FORMAT:
-Return ONLY valid JSON with this structure:
+OUTPUT FORMAT — Return ONLY valid JSON:
 {
   "title": "Complete SOP Title",
   "industry": "Industry Name",
   "sections": [
-    {
-      "number": "1",
-      "title": "Purpose and Scope",
-      "subsections": ["1.1 Purpose", "1.2 Scope"]
-    }
+    {"number": "1", "title": "Purpose and Scope", "subsections": ["1.1 Purpose", "1.2 Scope"]}
   ],
   "estimated_pages": 8
 }
+Use hierarchical numbering (1, 1.1, 1.1.1).""",
+        max_tokens=2048,
+    )
 
-Use hierarchical numbering (1, 1.1, 1.1.1).
-"""
 
-    async def create_outline(
-        self,
-        topic: str,
-        industry: str,
-        target_audience: str,
-        requirements: list = None,
-    ) -> SOPOutline:
+# ---------------------------------------------------------------------------
+# Graph-level tool — called by the planning_agent node
+# ---------------------------------------------------------------------------
 
-        user_prompt = f"""Create a detailed SOP outline for:
+@tool
+async def run_planning(prompt: str) -> str:
+    """Execute the SOP planning step.
 
-Topic: {topic}
-Industry: {industry}
-Target Audience: {target_audience}
-Additional Requirements: {', '.join(requirements or [])}
+    Reads the SOPState identified by the workflow_id embedded in the prompt,
+    generates a structured outline, saves it back to STATE_STORE, and returns
+    a summary string for the next graph node.
 
-Return valid JSON with all required sections."""
+    Args:
+        prompt: The graph message string containing 'workflow_id::<id>'.
+    """
+    # Extract workflow_id from prompt
+    workflow_id = ""
+    if "workflow_id::" in prompt:
+        workflow_id = prompt.split("workflow_id::")[1].split()[0].strip()
 
-        # invoke_async returns an AgentResult — use str() to extract text
-        response = await self.agent.invoke_async(user_prompt)
+    state: SOPState = STATE_STORE.get(workflow_id)
+    if state is None:
+        return f"ERROR: no state found for workflow_id={workflow_id}"
+
+    try:
+        llm = _make_llm_agent()
+
+        user_prompt = (
+            f"Create a detailed SOP outline for:\n"
+            f"Topic: {state.topic}\n"
+            f"Industry: {state.industry}\n"
+            f"Target Audience: {state.target_audience}\n"
+            f"Additional Requirements: {', '.join(state.requirements or [])}\n\n"
+            f"Return valid JSON with all required sections."
+        )
+
+        response = await llm.invoke_async(user_prompt)
         response_text = str(response).strip()
 
-        # Strip markdown code fences the model may have added
+        # Strip markdown code fences if present
         if response_text.startswith("```"):
             response_text = response_text.split("```")[1]
             if response_text.startswith("json"):
@@ -104,43 +118,37 @@ Return valid JSON with all required sections."""
         outline_data = json.loads(response_text)
         outline = SOPOutline(**outline_data)
 
-        logger.info("Created outline with %d sections", len(outline.sections))
-        return outline
+        state.outline = outline
+        state.status = WorkflowStatus.PLANNED
+        state.current_node = "planning"
+        state.increment_tokens(1500)
 
-    async def execute(self, state: SOPState) -> SOPState:
-        try:
-            outline = await self.create_outline(
-                topic=state.topic,
-                industry=state.industry,
-                target_audience=state.target_audience,
-                requirements=state.requirements,
-            )
-            state.outline = outline
-            state.status = WorkflowStatus.PLANNED
-            state.current_node = "planning"
-            state.increment_tokens(1500)
+        logger.info("Planning complete — %d sections | workflow_id=%s",
+                    len(outline.sections), workflow_id)
 
-        except Exception as e:
-            logger.error("Planning failed: %s", e)
-            state.add_error(f"Planning failed: {str(e)}")
-            state.status = WorkflowStatus.FAILED
+        return (
+            f"workflow_id::{workflow_id} | "
+            f"Planning complete: {len(outline.sections)} sections created for '{state.topic}'"
+        )
 
-        return state
+    except Exception as e:
+        logger.error("Planning failed: %s", e)
+        state.add_error(f"Planning failed: {str(e)}")
+        state.status = WorkflowStatus.FAILED
+        return f"workflow_id::{workflow_id} | Planning FAILED: {e}"
 
 
 # ---------------------------------------------------------------------------
-# FIX: Graph node must be a plain async function (SOPState) -> SOPState.
-#
-# Previous versions wrapped this in Agent(tools=[planning_tool]) and added
-# that Agent as the graph node. When the graph called it, it passed the
-# SOPState object directly as the agent prompt, which raised:
-#   ValueError: Input prompt must be of type: `str | list[ContentBlock] | Messages | None`
-#
-# The correct pattern: register a plain async function with gb.add_node().
-# The Strands graph will call planning_node(state) directly.
+# The Agent node registered with GraphBuilder
 # ---------------------------------------------------------------------------
 
-async def planning_node(state: SOPState) -> SOPState:
-    """Graph node function for the planning step."""
-    agent = PlanningAgent()
-    return await agent.execute(state)
+planning_agent = Agent(
+    name="PlanningNode",
+    system_prompt=(
+        "You are the planning node in an SOP generation pipeline. "
+        "When you receive a message, IMMEDIATELY call the run_planning tool "
+        "with the full message as the prompt argument. "
+        "Do not add any commentary — just call the tool and return its result."
+    ),
+    tools=[run_planning],
+)
