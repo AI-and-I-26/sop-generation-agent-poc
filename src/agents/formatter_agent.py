@@ -8,8 +8,9 @@ Uses smaller/cheaper model (Llama 8B) for cost optimization.
 import os
 import logging
 from datetime import datetime
-from strands import Agent
-from strands.types import ModelConfig
+from strands import Agent,tool
+#from strands.types import ModelConfig
+from strands.models import BedrockModel
 
 from src.graph.state_schema import SOPState, WorkflowStatus
 
@@ -27,18 +28,16 @@ class FormatterAgent:
     def __init__(self):
         """Initialize Formatter Agent with Strand"""
         
-        # Use smaller model for cost optimization
-        model_id = os.getenv('MODEL_FORMATTER', 'meta.llama3-1-8b-instruct-v1:0')
-        
+        model_id = os.getenv("MODEL_FORMATTER", "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0")
+        region   = os.getenv("AWS_REGION", "us-east-2")
+
         self.agent = Agent(
-            name="FormatterAgent",
-            model=f"bedrock/{model_id}",
+            name="FormatterAge",
+            model=BedrockModel(model_id=model_id, region=region),
             system_prompt=self._get_system_prompt(),
-            temperature=0.3,  # Lower for consistency
+            temperature=0.3,
             max_tokens=2048,
-            model_config=ModelConfig(
-                region=os.getenv('AWS_REGION', 'us-east-1')
-            )
+            response_format={"type": "json_object"}
         )
         
         logger.info(f"Initialized FormatterAgent with model: {model_id}")
@@ -183,8 +182,19 @@ CRITICAL:
         return state
 
 
-# Standalone node function for Strand StateGraph
+"""# Standalone node function for Strand StateGraph
 async def formatter_node(state: SOPState) -> SOPState:
-    """Formatter node for Strand StateGraph"""
+     agent = FormatterAgent()
+    return await agent.execute(state)"""
+
+@tool
+async def formatter_tool(state: SOPState) -> SOPState:
+    #"""Planning tool: executes the PlanningAgent logic."""
     agent = FormatterAgent()
     return await agent.execute(state)
+
+# Create the actual graph node executor
+formatter_agent = Agent(
+    tools=[formatter_tool],
+    #system_prompt="Plan SOP steps before research."
+)

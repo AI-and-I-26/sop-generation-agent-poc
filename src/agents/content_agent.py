@@ -8,8 +8,9 @@ import os
 import json
 import logging
 from typing import Dict
-from strands import Agent
-from strands.types import ModelConfig
+from strands import Agent,tool
+#from strands.types import ModelConfig
+from strands.models import BedrockModel
 
 from src.graph.state_schema import SOPState, WorkflowStatus
 
@@ -25,20 +26,18 @@ class ContentAgent:
     """
     
     def __init__(self):
-        """Initialize Content Agent with Strand"""
-        
-        model_id = os.getenv('MODEL_CONTENT', 'meta.llama3-1-70b-instruct-v1:0')
-        
+        """Initialize Content Agent with Strand"""      
+
+        model_id = os.getenv("MODEL_QA", "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0")
+        region   = os.getenv("AWS_REGION", "us-east-2")
+
         self.agent = Agent(
             name="ContentAgent",
-            model=f"bedrock/{model_id}",
-            system_prompt=self._get_system_prompt(),
-            temperature=0.8,  # Higher for creativity
-            max_tokens=3072,
-            response_format={"type": "json_object"},
-            model_config=ModelConfig(
-                region=os.getenv('AWS_REGION', 'us-east-1')
-            )
+            model=BedrockModel(model_id=model_id, region=region),
+            system_prompt=self._get_system_prompt(),          
+            temperature=0.8,
+            max_tokens=2048,
+            response_format={"type": "json_object"}
         )
         
         logger.info("Initialized ContentAgent")
@@ -119,7 +118,7 @@ Requirements:
 Return complete JSON with all required fields."""
         
         try:
-            response = await self.agent.ainvoke(prompt)
+            response = await self.agent.invoke_async(prompt)
             content_data = json.loads(response.content)
             
             logger.info(f"Generated content for: {section_title}")
@@ -167,9 +166,20 @@ Return complete JSON with all required fields."""
         
         return state
 
-
+"""
 # Standalone node function for Strand StateGraph
 async def content_node(state: SOPState) -> SOPState:
-    """Content generation node for Strand StateGraph"""
+    agent = ContentAgent()
+    return await agent.execute(state)"""
+
+@tool
+async def content_tool(state: SOPState) -> SOPState:
+    #"""Planning tool: executes the PlanningAgent logic."""
     agent = ContentAgent()
     return await agent.execute(state)
+
+# Create the actual graph node executor
+content_agent = Agent(
+    tools=[content_tool],
+   # system_prompt="Plan SOP steps before research."
+)

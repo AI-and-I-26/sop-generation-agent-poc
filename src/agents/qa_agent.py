@@ -9,8 +9,9 @@ import os
 import json
 import re
 import logging
-from strands import Agent
-from strands.types import ModelConfig
+from strands import Agent,tool
+#from strands.types import ModelConfig
+from strands.models import BedrockModel
 
 from src.graph.state_schema import SOPState, QAResult, WorkflowStatus
 
@@ -26,20 +27,18 @@ class QAAgent:
     """
     
     def __init__(self):
-        """Initialize QA Agent with Strand"""
-        
-        model_id = os.getenv('MODEL_QA', 'meta.llama3-1-70b-instruct-v1:0')
-        
+        """Initialize QA Agent with Strand"""            
+
+        model_id = os.getenv("MODEL_QA", "arn:aws:bedrock:us-east-2:070797854596:inference-profile/us.meta.llama3-3-70b-instruct-v1:0")
+        region   = os.getenv("AWS_REGION", "us-east-2")
+
         self.agent = Agent(
             name="QAAgent",
-            model=f"bedrock/{model_id}",
-            system_prompt=self._get_system_prompt(),
-            temperature=0.5,  # Moderate for consistent evaluation
+            model=BedrockModel(model_id=model_id, region=region),
+            system_prompt=self._get_system_prompt(),          
+            temperature=0.5,
             max_tokens=2048,
-            response_format={"type": "json_object"},
-            model_config=ModelConfig(
-                region=os.getenv('AWS_REGION', 'us-east-1')
-            )
+            response_format={"type": "json_object"}
         )
         
         logger.info("Initialized QAAgent")
@@ -190,8 +189,20 @@ Return complete JSON with all required fields."""
         return state
 
 
-# Standalone node function for Strand StateGraph
+"""# Standalone node function for Strand StateGraph
 async def qa_node(state: SOPState) -> SOPState:
-    """QA review node for Strand StateGraph"""
+     agent = QAAgent()
+    return await agent.execute(state)"""
+
+
+@tool
+async def qa_tool(state: SOPState) -> SOPState:
+    #"""Planning tool: executes the PlanningAgent logic."""
     agent = QAAgent()
     return await agent.execute(state)
+
+# Create the actual graph node executor
+qa_agent = Agent(
+    tools=[qa_tool],
+    #system_prompt="Plan SOP steps before research."
+)
