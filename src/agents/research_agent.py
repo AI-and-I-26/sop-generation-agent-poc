@@ -19,18 +19,8 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# FIX: Tool definitions must be module-level @tool-decorated functions.
-#
-# The original code defined tools inside helper methods (_create_kb_search_tool,
-# _create_compliance_tool) and then wrapped them in a Tool() constructor call.
-# Two problems:
-#   1. `Tool` was never imported (the import line was commented out), causing
-#      a NameError at runtime.
-#   2. Strands does not use a Tool() wrapper at all — you simply pass the
-#      @tool-decorated callable directly to Agent(tools=[...]).
-#
-# Solution: move the logic to module-level @tool functions and pass them
-# straight to the Agent constructor.
+# Tool definitions — module-level @tool decorated functions.
+# Pass these directly to Agent(tools=[...]); no Tool() wrapper needed.
 # ---------------------------------------------------------------------------
 
 @tool
@@ -110,8 +100,6 @@ class ResearchAgent:
         )
         region = os.getenv("AWS_REGION", "us-east-2")
 
-        # FIX: Removed unsupported `temperature` and `response_format` kwargs.
-        # Pass @tool functions directly — no Tool() wrapper needed.
         self.agent = Agent(
             name="ResearchAgent",
             model=BedrockModel(model_id=model_id, region=region),
@@ -167,7 +155,7 @@ Use the available tools to:
 
 Return comprehensive research findings in JSON format."""
 
-        # FIX: Strands AgentResult must be converted with str() — NOT .content
+        # invoke_async returns an AgentResult — use str() to extract text
         response = await self.agent.invoke_async(prompt)
         response_text = str(response).strip()
 
@@ -205,18 +193,11 @@ Return comprehensive research findings in JSON format."""
 
 
 # ---------------------------------------------------------------------------
-# Graph node wiring
+# FIX: Graph node must be a plain async function (SOPState) -> SOPState.
+# Same root cause as planning_agent.py — see comment there for full explanation.
 # ---------------------------------------------------------------------------
 
-@tool
-async def research_tool(state: SOPState) -> SOPState:
-    """Research tool: executes the ResearchAgent logic."""
+async def research_node(state: SOPState) -> SOPState:
+    """Graph node function for the research step."""
     agent = ResearchAgent()
     return await agent.execute(state)
-
-
-# This Agent is what gets imported by sop_workflow.py and added as a graph node.
-# GraphBuilder requires an Agent instance — NOT the raw research_tool function.
-research_agent = Agent(
-    tools=[research_tool],
-)

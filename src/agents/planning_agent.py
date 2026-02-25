@@ -7,7 +7,7 @@ Creates structured SOP outlines using Strand Agent with JSON schema enforcement.
 import os
 import json
 import logging
-from strands import Agent, tool
+from strands import Agent
 from strands.models import BedrockModel
 
 from src.graph.state_schema import SOPState, SOPOutline, WorkflowStatus
@@ -28,8 +28,6 @@ class PlanningAgent:
         )
         region = os.getenv("AWS_REGION", "us-east-2")
 
-        # NOTE: response_format and temperature are NOT valid Strands Agent kwargs.
-        # JSON output is enforced via the system prompt instead.
         self.agent = Agent(
             name="PlanningAgent",
             model=BedrockModel(model_id=model_id, region=region),
@@ -92,8 +90,7 @@ Additional Requirements: {', '.join(requirements or [])}
 
 Return valid JSON with all required sections."""
 
-        # FIX: invoke_async returns an AgentResult — use str() to get text,
-        # NOT response.content (AgentResult has no .content attribute).
+        # invoke_async returns an AgentResult — use str() to extract text
         response = await self.agent.invoke_async(user_prompt)
         response_text = str(response).strip()
 
@@ -131,15 +128,19 @@ Return valid JSON with all required sections."""
         return state
 
 
-@tool
-async def planning_tool(state: SOPState) -> SOPState:
-    """Planning tool: executes the PlanningAgent logic."""
+# ---------------------------------------------------------------------------
+# FIX: Graph node must be a plain async function (SOPState) -> SOPState.
+#
+# Previous versions wrapped this in Agent(tools=[planning_tool]) and added
+# that Agent as the graph node. When the graph called it, it passed the
+# SOPState object directly as the agent prompt, which raised:
+#   ValueError: Input prompt must be of type: `str | list[ContentBlock] | Messages | None`
+#
+# The correct pattern: register a plain async function with gb.add_node().
+# The Strands graph will call planning_node(state) directly.
+# ---------------------------------------------------------------------------
+
+async def planning_node(state: SOPState) -> SOPState:
+    """Graph node function for the planning step."""
     agent = PlanningAgent()
     return await agent.execute(state)
-
-
-# This Agent is what gets imported by sop_workflow.py and added as a graph node.
-# GraphBuilder requires an Agent instance — NOT the raw planning_tool function.
-planning_agent = Agent(
-    tools=[planning_tool],
-)
