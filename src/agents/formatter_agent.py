@@ -1,36 +1,94 @@
 """
-Formatter Agent - Module 5, Section 5.1
+Formatter Agent - Module X (Option B: client-side tool execution)
 
-ARCHITECTURE CHANGE: pure Python formatting (no LLM needed).
-See planning_agent.py for full debug instructions.
+Formats final SOP document (pure Python — no LLM calls).
+
+GRAPH INTEGRATION PATTERN:
+  - The graph passes a plain string containing 'workflow_id::<id>'.
+  - STATE_STORE holds SOPState keyed by workflow_id.
+  - This module exposes:
+      * async @tool run_formatting(prompt: str) -> str     (does the real work)
+      * async run_formatter_node(prompt: str, use_llama_dispatch: bool=False) -> str
+  - In the graph, wrap run_formatter_node with LocalNodeAgent (see sop_workflow.py).
 """
 
-import os
+import re
 import logging
 from datetime import datetime
+from typing import Optional, Dict, List, Tuple
 
-from strands import Agent, tool
-from strands.models import BedrockModel
+from strands import tool
 
 from src.graph.state_schema import SOPState, WorkflowStatus
-from src.agents.state_store import STATE_STORE
+from src.graph.state_store import STATE_STORE
+
+# --- Import centralized system prompt (adjust path if your file lives elsewhere) ---
+try:
+    from src.prompts.system_prompts import FORMATTER_SYSTEM_PROMPT  # preferred path
+except Exception:
+    # Fallback for older layout where the file lived under agents/
+    from src.agents.systems_prompt import FORMATTER_SYSTEM_PROMPT  # type: ignore
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL_ID = (
-    "arn:aws:bedrock:us-east-2:070797854596:"
-    "inference-profile/us.meta.llama3-3-70b-instruct-v1:0"
-)
-_REGION = os.getenv("AWS_REGION", "us-east-2")
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+def _extract_workflow_id_from_prompt(prompt: str) -> Optional[str]:
+    """
+    Extract 'workflow_id::<id>' from a text prompt or message content.
+    """
+    m = re.search(r"workflow_id::([^\s\|]+)", prompt or "")
+    return m.group(1) if m else None
 
 
-def _get_model_id(env_var: str) -> str:
-    return os.getenv(env_var, _DEFAULT_MODEL_ID)
+def _order_sections_by_outline(
+    content_sections: Dict[str, str],
+    state: SOPState
+) -> List[Tuple[str, str]]:
+    """
+    Return a list of (section_title, content) ordered by the outline if available.
+    Any content keys not found in the outline are appended at the end in insertion order.
+    """
+    if not getattr(state, "outline", None) or not getattr(state.outline, "sections", None):
+        # Fall back to insertion order (Py3.7+ dict preserves insertion order)
+        return list(content_sections.items())
+
+    # Titles from outline in order
+    expected_titles = [getattr(s, "title", "").strip() for s in (state.outline.sections or [])]
+    expected_titles = [t for t in expected_titles if t]  # drop empties
+
+    # Map content by title
+    ordered: List[Tuple[str, str]] = []
+    seen = set()
+
+    for title in expected_titles:
+        if title in content_sections:
+            ordered.append((title, content_sections[title]))
+            seen.add(title)
+
+    # Append any extras that weren't in the outline (in insertion order)
+    for k, v in content_sections.items():
+        if k not in seen:
+            ordered.append((k, v))
+
+    return ordered
 
 
-def _build_document(title: str, industry: str, target_audience: str, content_sections: dict) -> str:
-    doc_parts = []
+def _build_document(
+    title: str,
+    industry: str,
+    target_audience: str,
+    ordered_sections: List[Tuple[str, str]],
+) -> str:
+    """
+    Assemble the final Markdown document.
+    `ordered_sections` is a list of (section_title, content) in the desired order.
+    """
+    doc_parts: List[str] = []
 
+    # Header & control
     doc_parts.append(f"# {title}")
     doc_parts.append("")
     doc_parts.append("**Document Control**")
@@ -42,24 +100,27 @@ def _build_document(title: str, industry: str, target_audience: str, content_sec
     doc_parts.append("")
     doc_parts.append("---")
     doc_parts.append("")
+
+    # Table of contents
     doc_parts.append("## Table of Contents")
     doc_parts.append("")
-
-    for i, section_title in enumerate(content_sections.keys(), 1):
+    for i, (section_title, _) in enumerate(ordered_sections, 1):
         doc_parts.append(f"{i}. {section_title}")
-
     doc_parts.append("")
     doc_parts.append("---")
     doc_parts.append("")
 
-    for section_title, content in content_sections.items():
+    # Sections
+    for section_title, content in ordered_sections:
+        # Ensure content already contains numbered steps etc. from content generation
         doc_parts.append(f"## {section_title}")
         doc_parts.append("")
-        doc_parts.append(content)
+        doc_parts.append(content or "")
         doc_parts.append("")
         doc_parts.append("---")
         doc_parts.append("")
 
+    # Signatures
     doc_parts.append("**Approval Signatures**")
     doc_parts.append("")
     doc_parts.append("Prepared by: _________________ Date: _______")
@@ -71,19 +132,31 @@ def _build_document(title: str, industry: str, target_audience: str, content_sec
     return "\n".join(doc_parts)
 
 
+# -----------------------------------------------------------------------------
+# Graph-level tool — does the ACTUAL formatting and writes to STATE_STORE
+# -----------------------------------------------------------------------------
 @tool
 async def run_formatting(prompt: str) -> str:
-    """Execute the SOP formatting step.
+    """
+    Execute the SOP formatting step.
+
+    Reads the SOPState identified by the workflow_id embedded in the prompt,
+    assembles the formatted markdown document from content_sections, saves it
+    to STATE_STORE, and returns a summary string for the next graph node.
 
     Args:
-        prompt: Graph message string containing 'workflow_id::<id>'.
+        prompt: The graph message string containing 'workflow_id::<id>'.
     """
-    logger.info(">>> run_formatting called | prompt: %s", prompt[:120])
+    logger.info(">>> run_formatting called | prompt: %s", (prompt or "")[:160])
 
-    workflow_id = ""
-    if "workflow_id::" in prompt:
-        workflow_id = prompt.split("workflow_id::")[1].split()[0].strip()
+    workflow_id = _extract_workflow_id_from_prompt(prompt or "") or ""
     logger.debug("Extracted workflow_id: '%s'", workflow_id)
+
+    # Fail fast if workflow_id is missing (helps catch graph prompt wiring issues early)
+    if not workflow_id:
+        raise ValueError(
+            "Missing workflow_id in prompt; expected 'workflow_id::<id>' within the message content."
+        )
 
     state: SOPState = STATE_STORE.get(workflow_id)
     if state is None:
@@ -91,55 +164,78 @@ async def run_formatting(prompt: str) -> str:
         logger.error(msg)
         return msg
 
-    logger.info("State found | content_sections: %s",
-                list(state.content_sections.keys()) if state.content_sections else "EMPTY - missing!")
-
-    if not state.content_sections:
-        msg = f"ERROR: no content_sections in state for workflow_id='{workflow_id}'"
-        logger.error(msg)
-        state.add_error(msg)
-        state.status = WorkflowStatus.FAILED
-        return f"workflow_id::{workflow_id} | Formatting FAILED: {msg}"
-
     try:
-        title = state.outline.title if state.outline else state.topic
+        if not getattr(state, "content_sections", None):
+            raise ValueError("No content sections available for formatting")
+
+        title = state.outline.title if getattr(state, "outline", None) else state.topic
+
+        # Ensure a stable, user-expected ordering (outline order if present)
+        ordered_sections = _order_sections_by_outline(state.content_sections, state)
 
         formatted_doc = _build_document(
             title=title,
             industry=state.industry,
             target_audience=state.target_audience,
-            content_sections=state.content_sections,
+            ordered_sections=ordered_sections,
         )
 
+        # Persist results
         state.formatted_document = formatted_doc
         state.status = WorkflowStatus.FORMATTED
         state.current_node = "formatter"
-        state.increment_tokens(800)
+        # Token accounting (rough; formatting is pure python)
+        if hasattr(state, "increment_tokens"):
+            state.increment_tokens(800)
 
-        logger.info("Formatting complete — %d chars | workflow_id=%s",
-                    len(formatted_doc), workflow_id)
+        logger.info(
+            "Formatting complete — %d chars | sections=%d | workflow_id=%s",
+            len(formatted_doc),
+            len(ordered_sections),
+            workflow_id,
+        )
 
         return (
             f"workflow_id::{workflow_id} | "
-            f"Formatting complete: {len(state.content_sections)} sections, "
-            f"{len(formatted_doc)} chars"
+            f"Formatting complete: document assembled with "
+            f"{len(ordered_sections)} sections ({len(formatted_doc)} chars)"
         )
 
     except Exception as e:
         logger.exception("Formatting FAILED for workflow_id=%s", workflow_id)
-        state.add_error(f"Formatting failed: {str(e)}")
+        if hasattr(state, "add_error"):
+            state.add_error(f"Formatting failed: {str(e)}")
         state.status = WorkflowStatus.FAILED
         return f"workflow_id::{workflow_id} | Formatting FAILED: {e}"
 
 
-formatter_agent = Agent(
-    name="FormatterNode",
-    model=BedrockModel(model_id=_get_model_id("MODEL_FORMATTER"), region=_REGION),
-    system_prompt=(
-        "You are the formatting node in an SOP generation pipeline. "
-        "When you receive a message, IMMEDIATELY call the run_formatting tool "
-        "with the full message as the prompt argument. "
-        "Do not add commentary — just call the tool and return its result."
-    ),
-    tools=[run_formatting],
-)
+# -----------------------------------------------------------------------------
+# Node entry point for Graph (client-side execution) — ASYNC WRAPPER
+# -----------------------------------------------------------------------------
+async def run_formatter_node(
+    prompt: str,
+    *,
+    use_llama_dispatch: bool = False
+) -> str:
+    """
+    Entry point for the FORMATTER node under Option B. (ASYNC)
+
+    Formatting is pure Python; we ignore LLaMA dispatch and directly execute
+    the local async tool `run_formatting` (deterministic and cheap).
+
+    Returns:
+      The tool result string to pass to the next node.
+    """
+    logger.info(">>> run_formatter_node | use_llama_dispatch=%s (ignored for formatting)", use_llama_dispatch)
+    return await run_formatting(prompt=prompt)
+
+
+# -----------------------------------------------------------------------------
+# NOTE:
+# We intentionally do NOT export a `formatter_agent = Agent(...)` here.
+# Under Option B, your graph should wrap `run_formatter_node` with LocalNodeAgent:
+#
+#   from src.agents.formatter_agent import run_formatter_node
+#   formatter_node = LocalNodeAgent("formatter", lambda p: run_formatter_node(p, use_llama_dispatch=False))
+#   gb.add_node(formatter_node, "formatter")
+# -----------------------------------------------------------------------------
