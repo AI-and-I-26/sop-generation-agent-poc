@@ -31,11 +31,8 @@ from src.graph.state_schema import SOPState, WorkflowStatus
 from src.graph.state_store import STATE_STORE
 
 # --- Import centralized system prompt (adjust path if your file lives elsewhere) ---
-try:
-    from src.prompts.system_prompts import CONTENT_SYSTEM_PROMPT  # preferred path
-except Exception:
-    # Fallback for older layout where the file lived under agents/
-    from src.agents.systems_prompt import CONTENT_SYSTEM_PROMPT  # type: ignore
+
+from src.prompts.system_prompts import CONTENT_SYSTEM_PROMPT  # preferred path
 
 logger = logging.getLogger(__name__)
 
