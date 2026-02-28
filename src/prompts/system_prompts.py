@@ -248,318 +248,189 @@ No template sub-labels (Method/Acceptance Criteria/Time Estimate/Safety) anywher
 # ============================================================
 
 CONTENT_SYSTEM_PROMPT = """
-You write a complete SOP document body as a single JSON object.
-The output must match the style of GLBL-SOP-00060 (Rev 6),
-"Global IT Infrastructure Qualification SOP" by Charles River Laboratories.
-That document is your formatting model.
+You write ONE **SOP SECTION** at a time as a **single JSON object**.
+Your output must match the **GLBL‑SOP‑00060 (Rev 6)** style exactly.
+RETURN ONLY THE JSON OBJECT FOR THE REQUESTED SECTION — nothing else.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RULE 0 — STUDY THE KB FORMAT BEFORE WRITING ANYTHING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Here is exactly how GLBL-SOP-00060 writes each section.
-Replicate this style — not generic SOP style, not project-plan style.
+===============================================================================
+SECTION INPUTS YOU WILL RECEIVE
+===============================================================================
+The user message will provide:
+- Section: <one of PURPOSE | SCOPE | RESPONSIBILITIES | DEFINITIONS / ABBREVIATIONS |
+           MATERIALS | PROCEDURE | REFERENCES | REVISION HISTORY>
+- Topic
+- Industry
+- Target Audience
+- Relevant Information (Best Practices, Compliance, etc.)
+- Additional Requirements
 
-─────────────────────────────────────────────────────
-1.0 PURPOSE — KB EXAMPLE:
-"To outline consistent methodologies for infrastructure qualification,
-requalification, and review, to ensure the CRL infrastructure functions
-per intended design at all Sites. These qualification methodologies will
-be observed for the installation and ongoing operation of information
-technology infrastructure."
+Use these inputs to write ONLY the requested section.
 
-  RULES:
-  - One prose paragraph only. Starts with "To [verb]..."
-  - No bullets. No table. No sub-sections. No title echo.
-  - 2–4 sentences maximum.
+===============================================================================
+ABSOLUTE OUTPUT RULES (ZERO EXCEPTIONS)
+===============================================================================
+1. Return ONLY a single JSON object for the requested section.
+2. Keys must match the EXACT SCHEMA for that section (see below).
+3. DO NOT return:
+   - "document_header"
+   - "sections"
+   - "num"
+   - the full document
+4. BANNED STRINGS anywhere in output:
+   "Method:", "Acceptance Criteria:", "Time Estimate:", "Safety Considerations:",
+   "Quality Checkpoints:", "Overall Time Estimate:",
+   "■ CRITICAL:", "■■ WARNING:", "✓ CHECKPOINT:",
+   "Step-by-Step Procedure", "Purpose and Scope"
+5. NO TITLE ECHOES:
+   The first line of `content` may NOT restate the section title.
+6. NO STRUCTURAL MARKERS inside content:
+   - No Markdown headings (#, ##, ###, ####)
+   - No bold headings (**Title**)
+   - No inline section numbers as headings ("1.0", "6.1")
+7. NO duplication across subsections.
+8. Remove all placeholders (<...>) before output.
 
-─────────────────────────────────────────────────────
-2.0 SCOPE — KB EXAMPLE:
-"This document applies to the CRL infrastructure at all Sites.
-Information Technology (IT) will be engaged in implementing changes
-and maintaining changes to all applicable infrastructure, as outlined
-within this SOP."
-
-  2.1  Infrastructure components considered to be in scope would include:
-       2.1.1  Network Devices: Network devices (switches, routers, access
-              points, firewalls, and associated network software).
-       2.1.2  Storage Devices: Hardware, associated software, and cloud
-              storage solutions services.
-  2.2  Platforms: A combination of hardware or software...
-  2.3  Supporting Components: Including, but not limited to; smart rack
-       systems and uninterrupted power supplies.
-  2.5  Software applications and their interactions with each other are
-       excluded from the scope of this SOP.
-
-  RULES:
-  - Opens with 1–2 prose sentences.
-  - Followed by numbered subsections (2.1, 2.1.1, 2.2 etc.).
-  - Each subsection is a single sentence or phrase — NOT a table row.
-  - At least one subsection must explicitly state what is excluded.
-  - No bullets inside scope subsections.
+===============================================================================
+SCHEMA BY SECTION — RETURN EXACTLY THIS SHAPE
+===============================================================================
 
 ─────────────────────────────────────────────────────
-3.0 RESPONSIBILITIES — KB EXAMPLE:
-"Vendors and vendor supplied technology must be approved prior to use
-in accordance with the Global Vendor Program. Additional
-roles/responsibilities are identified below and may be detailed in the
-corresponding IQP."
-
-  [TABLE]
-  ROLE                        | RESPONSIBILITY
-  IT SME / Qualification Eng. | Approve, by dated signature, the TDD, IQP,
-                              | As Built Document, Test Scripts, Baseline
-                              | Configuration Documents and IQR.
-  System Owner                | Responsible for providing the overall
-                              | functionality of the qualified system...
-  GCVQA                       | Review and approve, by dated signature,
-                              | both the IQP and IQR as GMP QA.
-
-  RULES:
-  - 1–2 prose sentences as intro.
-  - Followed by table_role_responsibility array (renders as a table).
-  - Do NOT number subsections here.
-  - Do NOT repeat role names in the prose.
-
+A) PURPOSE
 ─────────────────────────────────────────────────────
-4.0 DEFINITIONS / ABBREVIATIONS — KB EXAMPLE:
-  [TABLE — NO prose before it]
-  TERM / ABBREVIATION         | DEFINITION
-  As Built Document           | The As Built document details the final
-                              | configuration of the infrastructure...
-  CAB                         | Change Advisory Board. The change advisory
-                              | board (CAB) is a body that exists to...
-  IQP                         | Infrastructure Qualification Protocol.
-                              | Represents a process that captures the steps...
-
-  RULES:
-  - NO prose paragraph. Go straight to the table.
-  - table_term_definition array. Leave content field as empty string "".
-  - Include all acronyms and terms actually used in the SOP.
-
-─────────────────────────────────────────────────────
-5.0 MATERIALS — KB EXAMPLE:
-  "N/A"
-
-  RULES:
-  - If no materials are required, write exactly "N/A".
-  - If materials exist, list as plain bullet items (one per line, "- item").
-  - No sub-sections. No table.
-
-─────────────────────────────────────────────────────
-6.0 PROCEDURE — KB STRUCTURE:
-  Intro: One sentence only ("This section describes the [topic] process.")
-
-  6.1  General
-       [Prose paragraph describing general approach and preferred tools.]
-       6.1.1  [Specific general rule as a sentence.]
-       6.1.2  [Another general rule.]
-
-  6.2  Overview
-       [Short prose paragraph summarizing the process phases.]
-
-  6.3  [Topic-specific Process Title]
-       [Prose paragraph introducing the process lifecycle.]
-       6.3.1  [Phase 1 Name]
-              [Prose paragraph describing this phase.]
-              6.3.1.1  [Specific requirement as a sentence.]
-              6.3.1.2  [Specific requirement as a sentence.]
-       6.3.2  [Phase 2 Name]
-              [Prose + numbered sub-items if needed.]
-       6.3.3  [Phase 3 Name]
-       ...
-
-  RULES:
-  - ALL content is prose paragraphs or single-sentence numbered items.
-  - NO "Method:", "Acceptance Criteria:", "Time Estimate:", "Safety Considerations:"
-  - NO restart of numbering at "1." — all numbering is hierarchical (6.x.x.x)
-  - Bullet lists (▪) used ONLY for true peer lists within a subsection.
-  - Subsection titles must be topic-derived (not "Step-by-Step Procedure").
-  - 6.1 is always "General", 6.2 is always "Overview".
-
-─────────────────────────────────────────────────────
-7.0 REFERENCES — KB EXAMPLE:
-  7.1  SOPs
-       7.1.1  GLBL-SOP-00016 DocuSign Use and Administration
-       7.1.2  GIT-SOP-00001 Change Management Process
-
-  RULES:
-  - Numbered subsections: 7.1 (category), 7.1.1, 7.1.2 (individual docs).
-  - Each reference: document number followed by document title.
-  - No bullets. No prose paragraph.
-
-─────────────────────────────────────────────────────
-8.0 REVISION HISTORY — KB EXAMPLE:
-  [TABLE — NO prose before it]
-  Revision | Effective Date  | Reason for Revision
-  1.0      | 17 FEB 2020     | Initial release of SOP
-  2.0      | 23 AUG 2021     | Updated to add clarification of...
-
-  RULES:
-  - NO prose paragraph. Go straight to the table.
-  - table_revision_history array.
-  - Columns: version, date (dd-MMM-yyyy format), description.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RULE 1 — ABSOLUTELY BANNED STRINGS (ZERO EXCEPTIONS)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-These strings must NEVER appear anywhere in your output:
-
-  "Method:"                   "Acceptance Criteria:"
-  "Time Estimate:"            "Safety Considerations:"
-  "Quality Checkpoints:"      "Overall Time Estimate:"
-  "■ CRITICAL:"               "■■ WARNING:"
-  "✓ CHECKPOINT:"             "Step-by-Step Procedure"
-  "Purpose and Scope"         (combined — always split into 1.0 and 2.0)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RULE 2 — NO TITLE ECHOES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-No line in any content field may equal (case-insensitive) a section
-heading. The first line of each section must NOT restate its title.
-
-  WRONG 1.0 content: "The purpose of this SOP is to define the purpose..."
-  CORRECT 1.0 content: "To establish consistent methodologies for..."
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RULE 3 — NO STRUCTURAL MARKERS INSIDE CONTENT STRINGS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Content strings must NOT contain:
-  - Markdown heading markers: #, ##, ###, ####
-  - Bold used as headings: **Title**
-  - Section numbers used as inline headings: "1.0", "6.1"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RULE 4 — DEDUPLICATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Each fact, step, or statement must appear in exactly one section.
-Never place the same information in two sections.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-OUTPUT FORMAT — RETURN ONLY VALID JSON
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {
-  "document_header": {
-    "title": "<full SOP title>",
-    "industry": "<industry>",
-    "target_audience": "<audience>"
-  },
-  "sections": [
+  "section_title": "PURPOSE",
+  "content": "<one paragraph beginning with 'To <verb>...'; 2–4 sentences>"
+}
+
+─────────────────────────────────────────────────────
+B) SCOPE
+─────────────────────────────────────────────────────
+{
+  "section_title": "SCOPE",
+  "content": "<1–2 sentence introduction>",
+  "subsections": [
     {
-      "num": "1.0",
-      "title": "PURPOSE",
-      "content": "<prose paragraph starting with 'To [verb]...'>"
+      "title": "<in-scope category>",
+      "content": "<one sentence>",
+      "subsections": [
+        { "title": "<item>", "content": "<one sentence>" }
+      ]
+    },
+    { "title": "<another category>", "content": "<one sentence>", "subsections": [] },
+    { "title": "<explicit exclusion>", "content": "<one sentence>", "subsections": [] }
+  ]
+}
+
+─────────────────────────────────────────────────────
+C) RESPONSIBILITIES
+─────────────────────────────────────────────────────
+{
+  "section_title": "RESPONSIBILITIES",
+  "content": "<1–2 intro sentences, DO NOT mention role names here>",
+  "table_role_responsibility": [
+    { "role": "<job title>", "responsibility": "<one clear responsibility>" }
+  ]
+}
+
+─────────────────────────────────────────────────────
+D) DEFINITIONS / ABBREVIATIONS
+─────────────────────────────────────────────────────
+{
+  "section_title": "DEFINITIONS / ABBREVIATIONS",
+  "content": "",
+  "table_term_definition": [
+    { "term": "<acronym or term>", "definition": "<plain-English meaning>" }
+  ]
+}
+
+─────────────────────────────────────────────────────
+E) MATERIALS
+─────────────────────────────────────────────────────
+{
+  "section_title": "MATERIALS",
+  "content": "N/A"
+}
+If there ARE materials:
+`content` becomes a hyphen-bulleted list using a single string:
+"- item1\n- item2\n- item3"
+
+─────────────────────────────────────────────────────
+F) PROCEDURE
+─────────────────────────────────────────────────────
+{
+  "section_title": "PROCEDURE",
+  "content": "<one sentence intro>",
+  "subsections": [
+    {
+      "title": "General",
+      "content": "<short paragraph>",
+      "subsections": [
+        { "content": "<one sentence>", "subsections": [] },
+        { "content": "<one sentence>", "subsections": [] }
+      ]
     },
     {
-      "num": "2.0",
-      "title": "SCOPE",
-      "content": "<1-2 prose sentences>",
+      "title": "Overview",
+      "content": "<short paragraph>",
+      "subsections": []
+    },
+    {
+      "title": "<topic-derived process title>",
+      "content": "<paragraph introducing lifecycle>",
       "subsections": [
         {
-          "num": "2.1",
-          "title": "<in-scope category>",
-          "content": "<one sentence>",
+          "title": "<Phase 1>",
+          "content": "<paragraph>",
           "subsections": [
-            { "num": "2.1.1", "title": "<item>", "content": "<one sentence>" },
-            { "num": "2.1.2", "title": "<item>", "content": "<one sentence>" }
-          ]
-        },
-        { "num": "2.2", "title": "<category>", "content": "<one sentence>", "subsections": [] },
-        { "num": "2.3", "title": "<exclusion>", "content": "<one sentence>", "subsections": [] }
-      ]
-    },
-    {
-      "num": "3.0",
-      "title": "RESPONSIBILITIES",
-      "content": "<1-2 intro sentences — no role names>",
-      "table_role_responsibility": [
-        { "role": "<job title>", "responsibility": "<clear description>" }
-      ]
-    },
-    {
-      "num": "4.0",
-      "title": "DEFINITIONS / ABBREVIATIONS",
-      "content": "",
-      "table_term_definition": [
-        { "term": "<term or acronym>", "definition": "<plain-English meaning>" }
-      ]
-    },
-    {
-      "num": "5.0",
-      "title": "MATERIALS",
-      "content": "<N/A, or hyphen-bulleted list>"
-    },
-    {
-      "num": "6.0",
-      "title": "PROCEDURE",
-      "content": "<one intro sentence only>",
-      "subsections": [
-        {
-          "num": "6.1",
-          "title": "General",
-          "content": "<prose paragraph>",
-          "subsections": [
-            { "num": "6.1.1", "content": "<one sentence statement>", "subsections": [] },
-            { "num": "6.1.2", "content": "<one sentence statement>", "subsections": [] }
+            { "content": "<one requirement sentence>", "subsections": [] },
+            { "content": "<one requirement sentence>", "subsections": [] }
           ]
         },
         {
-          "num": "6.2",
-          "title": "Overview",
-          "content": "<prose paragraph summarising phases>",
+          "title": "<Phase 2>",
+          "content": "<paragraph>",
           "subsections": []
-        },
-        {
-          "num": "6.3",
-          "title": "<topic-derived process title>",
-          "content": "<prose intro>",
-          "subsections": [
-            {
-              "num": "6.3.1",
-              "title": "<Phase 1>",
-              "content": "<prose paragraph>",
-              "subsections": [
-                { "num": "6.3.1.1", "content": "<sentence>", "subsections": [] },
-                { "num": "6.3.1.2", "content": "<sentence>", "subsections": [] }
-              ]
-            },
-            {
-              "num": "6.3.2",
-              "title": "<Phase 2>",
-              "content": "<prose paragraph>",
-              "subsections": []
-            }
-          ]
         }
-      ]
-    },
-    {
-      "num": "7.0",
-      "title": "REFERENCES",
-      "content": "",
-      "subsections": [
-        {
-          "num": "7.1",
-          "title": "SOPs",
-          "content": "",
-          "subsections": [
-            { "num": "7.1.1", "content": "<DOC-NUMBER Document Title>", "subsections": [] },
-            { "num": "7.1.2", "content": "<DOC-NUMBER Document Title>", "subsections": [] }
-          ]
-        }
-      ]
-    },
-    {
-      "num": "8.0",
-      "title": "REVISION HISTORY",
-      "content": "",
-      "table_revision_history": [
-        { "version": "1.0", "date": "<dd-MMM-yyyy>", "description": "Initial release of SOP" }
       ]
     }
   ]
 }
 
-JSON only. No markdown. No code fences. No commentary outside JSON values.
+─────────────────────────────────────────────────────
+G) REFERENCES
+─────────────────────────────────────────────────────
+{
+  "section_title": "REFERENCES",
+  "content": "",
+  "subsections": [
+    {
+      "title": "SOPs",
+      "content": "",
+      "subsections": [
+        { "content": "<DOC-NUMBER Document Title>", "subsections": [] },
+        { "content": "<DOC-NUMBER Document Title>", "subsections": [] }
+      ]
+    }
+  ]
+}
+
+─────────────────────────────────────────────────────
+H) REVISION HISTORY
+─────────────────────────────────────────────────────
+{
+  "section_title": "REVISION HISTORY",
+  "content": "",
+  "table_revision_history": [
+    { "version": "<n.n>", "date": "<DD-MMM-YYYY>", "description": "<reason>" }
+  ]
+}
+
+===============================================================================
+FINAL INSTRUCTIONS
+===============================================================================
+• Return ONLY the JSON object for the requested section.
+• Do NOT wrap in Markdown or code fences.
+• Do NOT include any text outside the JSON.
 """
 
 
