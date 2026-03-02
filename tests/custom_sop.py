@@ -44,7 +44,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # -----------------------------
 # Project import (your business logic)
 # -----------------------------
-from src.graph.sop_workflow import generate_sop
+from app.src.graph.sop_workflow_lma import generate_sop
 
 # =============================================================================
 # Word (.docx) support (light Markdown-to-Word mapping)
@@ -342,9 +342,9 @@ async def main():
     # ========================================================================
     # 🔧 CUSTOMIZE THESE VALUES:
     # ========================================================================
-    TOPIC = "Global Technology Infrastructure Qualification SOP"   # ← The specific SOP subject
+    TOPIC = "Global Technology Infrastructure Qualification SOP — Network Devices, Storage, and Cloud Platforms"   # ← The specific SOP subject
     INDUSTRY = "Information Technology (IT)"                       # ← The industry context
-    AUDIENCE = "Information Technology (IT)"                       # ← The primary readership
+    AUDIENCE = "IT Qualification Engineers and System Administrators at Charles River Laboratories"                       # ← The primary readership
     # ========================================================================
 
     # Pre-run summary
