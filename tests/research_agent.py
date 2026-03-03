@@ -236,14 +236,11 @@ def _invoke_model_json(
                 }
             ],
             # Structured Outputs — ensures response is valid JSON per schema.
-            "output_config": {
-                "format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "research_findings",
-                        "schema": schema,   # JSON Schema object (not a string here)
-                    }
-                }
+           "output_config": {
+            "format": {
+                "type": "json_schema",
+                "schema": schema,         # ← schema sits directly under format
+            }
             },
         }
 
@@ -1081,3 +1078,4 @@ research_agent = Agent(
     ),
     tools=[run_research],
 )
+
