@@ -8,20 +8,23 @@ ROLE IN THE PIPELINE:
 
 HOW IT WORKS:
     1. The outer 'planning_agent' (Agent instance) is registered as a
-       Strands graph node.  When the graph activates this node, the Agent
+       Strands graph node. When the graph activates this node, the Agent
        calls the run_planning @tool function via its tool-use capability.
     2. run_planning extracts the workflow_id from the graph message,
        fetches the SOPState from STATE_STORE, and calls the Bedrock
        Converse API with Structured Outputs (JSON Schema) to guarantee
-       a valid JSON outline.
+       a valid JSON outline (when supported by the local SDK).
+       If the local SDK is older and rejects `outputConfig`, we
+       automatically fall back to a plain Converse call without
+       Structured Outputs — silently (no warning).
     3. The outline is parsed into SOPOutline, stored back in STATE_STORE,
        and a summary string is returned to the graph for the next node.
 
 WHY STRUCTURED OUTPUTS?
     Using Bedrock's outputConfig.textFormat.type = "json_schema" forces
-    the model to return JSON that validates against _SOP_SCHEMA.  This
-    eliminates the need for brittle regex/strip post-processing and
-    prevents truncated JSON from silently passing downstream.
+    the model to return JSON that validates against _SOP_SCHEMA. This
+    eliminates the need for brittle post-processing and prevents
+    truncated JSON from passing downstream.
 
 RETRY LOGIC:
     If stopReason == "max_tokens", the Converse call is retried up to
@@ -29,16 +32,18 @@ RETRY LOGIC:
 
 ANTHROPIC CLAUDE MODEL:
     Uses the claude-sonnet-4-6 inference profile via the AWS Bedrock
-    Converse API.  Model ID is read from the MODEL_PLANNING env var,
+    Converse API. Model ID is read from MODEL_PLANNING (env var),
     defaulting to the us-east-2 inference profile ARN.
 """
 
 import os
+import re
 import json
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 import boto3
+from botocore.exceptions import ParamValidationError, ClientError
 
 from strands import Agent, tool
 from strands.models import BedrockModel
@@ -53,8 +58,6 @@ logger = logging.getLogger(__name__)
 # Configuration constants
 # ---------------------------------------------------------------------------
 
-# Default Bedrock inference profile ARN for Claude Sonnet 4.6 in us-east-2.
-# Override with MODEL_PLANNING env var to switch models or regions.
 _DEFAULT_MODEL_ID = (
     "arn:aws:bedrock:us-east-2:070797854596:"
     "inference-profile/global.anthropic.claude-sonnet-4-6"
@@ -67,48 +70,139 @@ def _get_model_id(env_var: str) -> str:
     return os.getenv(env_var, _DEFAULT_MODEL_ID)
 
 
+
 # ---------------------------------------------------------------------------
-# JSON Schema for Structured Outputs
+# JSON Schema for Structured Outputs (Bedrock-safe subset, FIXED)
 # ---------------------------------------------------------------------------
-# This schema is passed to Bedrock's outputConfig.textFormat.  The Bedrock
-# service validates the model's response against it before returning, so we
-# are guaranteed to receive valid JSON (or a stopReason error).
-#
-# NOTE: The schema allows 1–20 sections (minItems=1, maxItems=20).
-# The actual section count and titles come from the KB — the planning agent
-# reads kb_format_context from its prompt and uses the KB's own structure.
+# FIX APPLIED:
+#   • Every object now has `additionalProperties: False`
+#   • Nested objects (like subsection items) are also closed
+#   • No minItems / maxItems / default (to avoid Bedrock subset violations)
+
 _SOP_SCHEMA: Dict[str, Any] = {
     "type": "object",
+    "additionalProperties": False,
     "properties": {
-        "title":     {"type": "string", "minLength": 3},
-        "industry":  {"type": "string", "minLength": 2},
+        "title": {
+            "type": "string",
+            "minLength": 3,
+            "additionalProperties": False
+        },
+        "industry": {
+            "type": "string",
+            "minLength": 2,
+            "additionalProperties": False
+        },
         "sections": {
             "type": "array",
-            # Allow 1–20 sections — the actual count is determined by the KB
-            "minItems": 1,
-            "maxItems": 20,
             "items": {
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
-                    # Section numbers follow the KB's numbering style
-                    "number":  {"type": "string", "pattern": r"^\d+(\.\d+)?$"},
-                    "title":   {"type": "string", "minLength": 2},
-                    # subsections is an array of objects at this schema level
+                    "number": {
+                        "type": "string",
+                        "pattern": r"^\d+(\.\d+)?$",
+                        "additionalProperties": False
+                    },
+                    "title": {
+                        "type": "string",
+                        "minLength": 2,
+                        "additionalProperties": False
+                    },
                     "subsections": {
                         "type": "array",
-                        "items": {"type": "object"},
-                        "default": []
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "number": {
+                                    "type": "string",
+                                    "pattern": r"^\d+(\.\d+)?$",
+                                    "additionalProperties": False
+                                },
+                                "title": {
+                                    "type": "string",
+                                    "minLength": 2,
+                                    "additionalProperties": False
+                                }
+                            },
+                            "required": ["number", "title"]
+                        },
+                        "additionalProperties": False
                     }
                 },
-                "required": ["number", "title", "subsections"],
-                "additionalProperties": False
-            }
+                "required": ["number", "title", "subsections"]
+            },
+            "additionalProperties": False
         },
-        "estimated_pages": {"type": "integer", "minimum": 1, "maximum": 200}
+        "estimated_pages": {
+            "type": "integer",          
+            "additionalProperties": False
+        }
     },
-    "required": ["title", "industry", "sections", "estimated_pages"],
-    "additionalProperties": False
+    "required": ["title", "industry", "sections", "estimated_pages"]
 }
+
+# ---------------------------------------------------------------------------
+# JSON parsing helpers (robust in plain-Converse fallback)
+# ---------------------------------------------------------------------------
+
+def _repair_malformed_json(text: str) -> str:
+    """
+    Attempt to repair common JSON issues in LLM output:
+      - strip markdown fences / leading prose
+      - cut off at the last balanced top-level brace/bracket
+      - remove trailing commas before '}' or ']'
+    Returns a candidate JSON string for json.loads().
+    """
+    if not text:
+        return text
+    t = text.strip()
+
+    # Strip code fences if present
+    if t.startswith("```"):
+        parts = t.split("```")
+        if len(parts) >= 2:
+            t = parts[1]
+            if t.lstrip().startswith("json"):
+                t = t.lstrip()[4:]
+        t = t.strip()
+
+    # Drop leading prose before first JSON token
+    first = min([i for i in [t.find("{"), t.find("[")] if i != -1], default=-1)
+    if first > 0:
+        t = t[first:]
+
+    # Keep up to last balanced top-level brace/bracket
+    stack, last = [], -1
+    for i, ch in enumerate(t):
+        if ch in "{[":
+            stack.append(ch)
+        elif ch in "}]":
+            if stack:
+                opener = stack.pop()
+                if (opener, ch) in (("{", "}"), ("[", "]")) and not stack:
+                    last = i
+    if last != -1:
+        t = t[:last + 1]
+
+    # Remove a trailing comma immediately before } or ]
+    t = re.sub(r",\s*([}\]])", r"\1", t)
+    return t.strip()
+
+
+def _parse_json_lenient(text: str) -> Dict[str, Any]:
+    """
+    Parse JSON from text. In structured-output mode it's already valid JSON.
+    In plain Converse fallback, attempt lightweight repair before parsing.
+    """
+    if not text or not text.strip():
+        raise ValueError("Empty JSON string.")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        repaired = _repair_malformed_json(text)
+        return json.loads(repaired)
 
 
 # ---------------------------------------------------------------------------
@@ -118,18 +212,8 @@ _SOP_SCHEMA: Dict[str, Any] = {
 def _extract_text_blocks(response: Dict[str, Any]) -> str:
     """
     Pull the concatenated text from a Converse API response.
-
-    The Converse API returns output.message.content as a list of blocks.
-    Each block may be {"text": "..."} or {"toolUse": ...}.  We only want
-    the text blocks.
-
-    Args:
-        response: Raw dict returned by bedrock_client.converse().
-
-    Returns:
-        All text blocks joined into one string, stripped of whitespace.
     """
-    output  = response.get("output", {})
+    output = response.get("output", {})
     message = output.get("message", {})
     content: List[Dict[str, Any]] = message.get("content", [])
     texts = [
@@ -140,69 +224,105 @@ def _extract_text_blocks(response: Dict[str, Any]) -> str:
     return "".join(texts).strip()
 
 
+def _build_output_config(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Build the structured outputs config for Converse:
+      outputConfig.textFormat.type = "json_schema"
+      with a JSON Schema string supplied.
+    """
+    return {
+        "textFormat": {
+            "type": "json_schema",
+            "structure": {
+                "jsonSchema": {
+                    "schema": json.dumps(schema),  # Bedrock expects a STRING here
+                    "name": "sop_planning",
+                    "description": "Validated JSON plan for SOP outline"
+                }
+            }
+        }
+    }
+
+
+def _converse_once(
+    client,
+    model_id: str,
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int,
+    use_structured_outputs: bool,
+    schema: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Issue a single Converse request, optionally with structured outputs.
+    """
+    kwargs: Dict[str, Any] = dict(
+        modelId=model_id,
+        system=[{"text": system_prompt}],
+        messages=[{"role": "user", "content": [{"text": user_prompt}]}],
+        inferenceConfig={"maxTokens": max_tokens, "temperature": 0.0},
+    )
+    if use_structured_outputs and schema is not None:
+        kwargs["outputConfig"] = _build_output_config(schema)
+
+    return client.converse(**kwargs)
+
+
 def _converse_json(
     client,
     model_id: str,
     system_prompt: str,
     user_prompt: str,
     schema: Dict[str, Any],
-    initial_max_tokens: int = 4096,
+    initial_max_tokens: int = 5120,   # slightly higher to reduce truncation
     max_attempts: int = 3,
 ) -> Dict[str, Any]:
     """
-    Call Bedrock Converse with Structured Outputs and return parsed JSON.
+    Call Bedrock Converse and return parsed JSON dict.
 
-    Bedrock's outputConfig.textFormat.type = "json_schema" forces the model
-    to emit JSON that conforms to the supplied schema.  If the model runs out
-    of tokens before finishing (stopReason == "max_tokens"), we double the
-    budget and retry (up to max_attempts times).
-
-    Args:
-        client:             boto3 bedrock-runtime client.
-        model_id:           Bedrock inference profile ARN or model ID.
-        system_prompt:      The LLM's behavioural instructions.
-        user_prompt:        The specific planning request.
-        schema:             JSON Schema dict for the expected output.
-        initial_max_tokens: Starting token budget (default 4096).
-        max_attempts:       How many times to retry on max_tokens (default 3).
-
-    Returns:
-        Parsed dict matching the schema.
-
-    Raises:
-        RuntimeError: If all attempts exhaust the token budget.
-        ValueError:   If the model returns empty content.
+    Strategy:
+      1) Try with Structured Outputs (outputConfig.textFormat). If the local SDK
+         rejects `outputConfig` (older model), silently fall back to plain Converse.
+      2) Retry on stopReason == "max_tokens" by doubling maxTokens up to 8192.
     """
     max_tokens = initial_max_tokens
     last_reason = None
     last_text = None
 
-    for attempt in range(1, max_attempts + 1):
-        logger.debug("Converse attempt %d | maxTokens=%d", attempt, max_tokens)
+    supports_structured = True
 
-        response = client.converse(
-            modelId=model_id,
-            system=[{"text": system_prompt}],
-            messages=[{"role": "user", "content": [{"text": user_prompt}]}],
-            inferenceConfig={
-                "maxTokens":   max_tokens,
-                "temperature": 0.0,   # deterministic output for structured data
-            },
-            # Structured Outputs: Bedrock validates response against the schema.
-            # 'schema' must be passed as a JSON string (not a dict) in this field.
-            outputConfig={
-                "textFormat": {
-                    "type": "json_schema",
-                    "structure": {
-                        "jsonSchema": {
-                            "schema": json.dumps(schema),
-                            "name":   "sop_planning",
-                            "description": "Validated JSON plan for SOP outline"
-                        }
-                    }
-                }
-            },
+    for attempt in range(1, max_attempts + 1):
+        logger.debug(
+            "Converse attempt %d | maxTokens=%d | structured=%s",
+            attempt, max_tokens, supports_structured
         )
+        try:
+            response = _converse_once(
+                client=client,
+                model_id=model_id,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=max_tokens,
+                use_structured_outputs=supports_structured,
+                schema=schema,
+            )
+        except ParamValidationError as e:
+            # Older boto3/botocore without 'outputConfig' support: silent fallback.
+            msg = str(e)
+            if 'Unknown parameter in input: "outputConfig"' in msg and supports_structured:
+                supports_structured = False
+                response = _converse_once(
+                    client=client,
+                    model_id=model_id,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    max_tokens=max_tokens,
+                    use_structured_outputs=False,
+                )
+            else:
+                raise
+        except ClientError:
+            raise
 
         stop_reason = response.get("stopReason")
         last_reason = stop_reason
@@ -211,48 +331,36 @@ def _converse_json(
         last_text = text
 
         if not text:
-            raise ValueError(
-                f"Empty content from Bedrock. stopReason={stop_reason}"
-            )
+            raise ValueError(f"Empty content from Bedrock. stopReason={stop_reason}")
 
+        # Parse strictly (structured mode) or leniently (fallback mode)
         if stop_reason == "end_turn":
-            # Happy path: model finished cleanly within the token budget.
             logger.debug("stopReason=end_turn; parsing JSON.")
-            return json.loads(text)
+            return _parse_json_lenient(text)
 
         if stop_reason == "max_tokens":
-            # The response was truncated.  Double the budget and retry.
             logger.warning(
                 "Model hit max_tokens; doubling budget to %d (attempt %d).",
-                max_tokens * 2, attempt
+                min(max_tokens * 2, 8192), attempt
             )
             max_tokens = min(max_tokens * 2, 8192)
             continue
 
-        # Any other stop reason (e.g. stop_sequence, content_filtered):
-        # try to parse what we got rather than raising immediately.
-        logger.warning("Unhandled stopReason=%s; attempting parse.", stop_reason)
-        return json.loads(text)
+        logger.debug("Unhandled stopReason=%s; attempting parse.", stop_reason)
+        return _parse_json_lenient(text)
 
     raise RuntimeError(
-        f"Converse did not complete within token budget after {max_attempts} attempts. "
-        f"Last stopReason={last_reason}. Last text length={len(last_text or '')}."
+        "Converse did not complete within token budget after "
+        f"{max_attempts} attempts. Last stopReason={last_reason}. "
+        f"Last text length={len(last_text or '')}."
     )
 
 
 def _call_bedrock(model_id: str, system_prompt: str, user_prompt: str) -> str:
     """
     Synchronous wrapper: calls _converse_json and returns the result as a
-    JSON string.  This keeps run_planning (async) clean by moving the
-    blocking boto3 call here, where it can be run in a thread if needed.
-
-    Args:
-        model_id:      Bedrock model/profile ARN.
-        system_prompt: Planning agent system prompt.
-        user_prompt:   The specific SOP planning request.
-
-    Returns:
-        JSON string representation of the validated outline dict.
+    JSON string. This keeps run_planning (async) clean by moving the
+    blocking boto3 call here.
     """
     logger.debug("Calling Bedrock | model=%s | region=%s", model_id, _REGION)
     client = boto3.client("bedrock-runtime", region_name=_REGION)
@@ -262,36 +370,20 @@ def _call_bedrock(model_id: str, system_prompt: str, user_prompt: str) -> str:
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         schema=_SOP_SCHEMA,
-        initial_max_tokens=4096,
+        initial_max_tokens=5120,
         max_attempts=3,
     )
     json_text = json.dumps(data, ensure_ascii=False)
-    logger.debug("Validated JSON received (%d chars).", len(json_text))
+    logger.debug("Validated/parsed JSON received (%d chars).", len(json_text))
     return json_text
 
 
 def _parse_json_response(text: str) -> dict:
     """
-    Parse JSON from text.  With Structured Outputs the text is already pure
-    JSON.  This function is kept for safety — it also strips code fences in
-    case an older model still wraps the output.
-
-    Args:
-        text: Raw string from the Bedrock response.
-
-    Returns:
-        Parsed dict.
+    Parse JSON from text again (kept for compatibility with caller).
+    Uses the same lenient strategy to avoid decode errors in rare cases.
     """
-    text = text.strip()
-    # Strip legacy markdown code fences if present.
-    if text.startswith("```"):
-        chunks = text.split("```")
-        if len(chunks) >= 2:
-            text = chunks[1]
-            if text.startswith("json"):
-                text = text[4:]
-            text = text.strip()
-    return json.loads(text)
+    return _parse_json_lenient((text or "").strip())
 
 
 # ---------------------------------------------------------------------------
@@ -302,22 +394,6 @@ def _parse_json_response(text: str) -> dict:
 async def run_planning(prompt: str) -> str:
     """
     Execute the SOP planning step.
-
-    This function is the @tool that the outer planning_agent (Agent instance)
-    calls when the Strands graph activates the "planning" node.
-
-    FLOW:
-        1. Extract workflow_id from the graph message string.
-        2. Fetch SOPState from STATE_STORE.
-        3. Call Bedrock Converse (Structured Outputs) with PLANNING_SYSTEM_PROMPT.
-        4. Parse the response into SOPOutline and store it on the state.
-        5. Return a summary string for the next graph node.
-
-    Args:
-        prompt: The graph message string containing 'workflow_id::<id>'.
-
-    Returns:
-        A string starting with 'workflow_id::<id> | ...' for the next node.
     """
     logger.info(">>> run_planning called | prompt: %.120s", prompt)
 
@@ -343,9 +419,6 @@ async def run_planning(prompt: str) -> str:
         model_id = _get_model_id("MODEL_PLANNING")
         logger.info("Using model: %s", model_id)
 
-        # Build the user prompt — includes kb_format_context if available from a
-        # previous run or pre-seeded state.  On a fresh run it will be None and
-        # the planning agent falls back to standard SOP structure.
         kb_ctx_str = (
             json.dumps(state.kb_format_context, indent=2)
             if state.kb_format_context
@@ -369,16 +442,16 @@ async def run_planning(prompt: str) -> str:
             "Return valid JSON. No extra keys. Exactly match the JSON Schema."
         )
 
-        # Step 3: Call Bedrock with the planning system prompt and user prompt.
-        raw_text    = _call_bedrock(model_id, PLANNING_SYSTEM_PROMPT, user_prompt)
+        # Step 3: Call Bedrock; returns a JSON string (already parsed/validated upstream).
+        raw_text = _call_bedrock(model_id, PLANNING_SYSTEM_PROMPT, user_prompt)
         outline_data = _parse_json_response(raw_text)
-        outline      = SOPOutline(**outline_data)
+        outline = SOPOutline(**outline_data)
 
         # Step 4: Store the outline and update workflow state.
-        state.outline            = outline
-        state.status             = WorkflowStatus.PLANNED
-        state.current_node       = "planning"
-        state.planning_complete  = True
+        state.outline = outline
+        state.status = WorkflowStatus.PLANNED
+        state.current_node = "planning"
+        state.planning_complete = True
         state.increment_tokens(1500)
 
         logger.info(
@@ -402,16 +475,9 @@ async def run_planning(prompt: str) -> str:
 # ---------------------------------------------------------------------------
 # Graph node Agent
 # ---------------------------------------------------------------------------
-# The Agent registered with GraphBuilder.add_node().
-# It has a system prompt instructing it to call run_planning immediately,
-# and the run_planning @tool in its tools list.
-#
-# IMPORTANT: The node Agent must have a `model` parameter so it can invoke
-# its tools.  Without it, the graph silently skips tool calls.
 
 planning_agent = Agent(
     name="PlanningNode",
-    # BedrockModel wraps the boto3 Bedrock client used by Strands Agent internally.
     model=BedrockModel(model_id=_get_model_id("MODEL_PLANNING")),
     system_prompt=(
         "You are the planning node in an SOP generation pipeline. "
