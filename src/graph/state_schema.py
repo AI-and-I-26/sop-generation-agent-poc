@@ -1,161 +1,287 @@
 """
-State Schema - File 1/14
-Pydantic models for Strands workflow state
+state_schema.py — Pydantic models for the SOP generation workflow.
 
-CRITICAL: This is used by ALL agents and the workflow.
-Every field here must be compatible with agents.
+PURPOSE:
+    Defines the single source of truth for all data that flows through
+    the multi-agent SOP pipeline.  Every agent reads from and writes to
+    an SOPState instance; the workflow orchestrator seeds and harvests it.
+
+DESIGN PRINCIPLE — NO HARDCODED FORMAT RULES:
+    SOPState carries a `kb_format_context` field populated by the research
+    agent.  This field holds the formatting conventions extracted from
+    whatever documents are in YOUR Knowledge Base — section titles, table
+    structures, numbering patterns, writing style, etc.  All downstream
+    agents (content, formatter, QA) read from this field rather than
+    from any hardcoded template, so the output automatically mirrors your KB.
+
+DEPENDENCY CHAIN:
+    state_schema.py
+        └─ used by state_store.py (keyed storage)
+        └─ used by every agent (planning, research, content, formatter, qa)
+        └─ used by sop_workflow.py (orchestration)
 """
 
-from typing import Dict, List, Optional
-from enum import Enum
-from pydantic import BaseModel, Field
 from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional, Union
+
+from pydantic import BaseModel, Field, field_validator
 
 
+# ============================================================
+# WORKFLOW STATUS ENUM
+# ============================================================
 class WorkflowStatus(str, Enum):
-    """Workflow status enumeration"""
-    INIT = "init"
-    PLANNING = "planning"
-    PLANNED = "planned"
+    INIT        = "init"
+    PLANNING    = "planning"
+    PLANNED     = "planned"
     RESEARCHING = "researching"
-    RESEARCHED = "researched"
-    WRITING = "writing"
-    WRITTEN = "written"
-    FORMATTING = "formatting"
-    FORMATTED = "formatted"
-    QA_REVIEW = "qa_review"
+    RESEARCHED  = "researched"
+    WRITING     = "writing"
+    WRITTEN     = "written"
+    FORMATTING  = "formatting"
+    FORMATTED   = "formatted"
+    QA_REVIEW   = "qa_review"
     QA_COMPLETE = "qa_complete"
-    COMPLETED = "completed"
-    FAILED = "failed"
+    COMPLETED   = "completed"
+    FAILED      = "failed"
 
 
 # ============================================================
-# NESTED OUTLINE MODELS (Fix for Planning JSON shape)
+# OUTLINE MODELS
 # ============================================================
+
 class OutlineSubsection(BaseModel):
     """
-    Nested subsection used in the SOP outline.
-    Supports arbitrary depth via recursive 'subsections'.
-    Example: 2.1, 2.1.1, 6.3.1.2, etc.
+    Recursive nested subsection.
+    Supports any depth: 2.1 → 2.1.1 → 2.1.1.1, etc.
+    Section numbers and titles come from the KB's actual structure —
+    not from any hardcoded template.
     """
-    number: str = Field(..., description="Section number (e.g., '2.1', '6.3.1')")
-    title: str = Field(..., description="Section/subsection title")
-    subsections: List["OutlineSubsection"] = Field(
-        default_factory=list,
-        description="Nested subsections (recursive)"
-    )
+    number: str = Field(..., description="Section number e.g. '2.1', '6.3.1'")
+    title: str  = Field(..., description="Section title text")
+    subsections: List["OutlineSubsection"] = Field(default_factory=list)
 
-# Enable forward references for recursive type
 OutlineSubsection.model_rebuild()
 
 
 class OutlineSection(BaseModel):
     """
-    Top-level section (1.0 .. 8.0) with nested subsections.
+    A top-level section with optional nested subsections.
+    Numbers and titles are derived from the KB at runtime.
     """
-    number: str = Field(..., description="Top-level section number (e.g., '1.0')")
-    title: str = Field(..., description="Top-level section title")
-    subsections: List[OutlineSubsection] = Field(
-        default_factory=list,
-        description="Nested subsections"
-    )
+    number: str = Field(..., description="Top-level number e.g. '1.0'")
+    title: str  = Field(..., description="Exact section title")
+    subsections: List[OutlineSubsection] = Field(default_factory=list)
 
 
 class SOPOutline(BaseModel):
     """
-    Complete SOP outline structure produced by the Planning agent.
-
-    NOTE:
-    - 'audience' is optional here; many pipelines still take it from SOPState.target_audience.
-      Keeping it optional avoids breaking older runs and still allows newer prompts to pass it.
+    Full SOP outline produced by the planning agent.
+    The section structure mirrors whatever the KB documents use.
     """
-    title: str = Field(..., description="SOP document title")
-    industry: str = Field(..., description="Industry domain")
-    audience: Optional[str] = Field(default=None, description="Target audience (optional)")
-    sections: List[OutlineSection] = Field(..., min_length=5, description="All sections (1.0 .. 8.0)")
-    estimated_pages: int = Field(default=5, ge=1, le=100, description="Estimated length (pages)")
+    title: str      = Field(..., description="SOP document title")
+    industry: str   = Field(..., description="Industry domain")
+    audience: Optional[str] = Field(default=None)
+    sections: List[OutlineSection] = Field(..., min_length=1)
+    estimated_pages: int = Field(default=10, ge=1, le=200)
 
 
 # ============================================================
-# OTHER AGENT MODELS (unchanged)
+# RESEARCH FINDINGS MODEL
 # ============================================================
+
+class SectionInsight(BaseModel):
+    """
+    Normalized per-section facts from the KB.
+
+    Shape example:
+        {
+          "section": "6.0",
+          "facts": ["Backups must be tested quarterly", "..."],
+          "citations": ["s3://kb-bucket/doc1.pdf#p12", "..."]
+        }
+    """
+    section: str = Field(..., description="Section number, e.g., '1.0', '6.2.1'")
+    facts: List[str] = Field(default_factory=list, description="Key factual statements grounded in KB")
+    citations: List[str] = Field(default_factory=list, description="Source URIs or doc references")
+
+    @field_validator("section")
+    @classmethod
+    def _normalize_section(cls, v: str) -> str:
+        return str(v).strip()
+
+    @field_validator("facts", "citations")
+    @classmethod
+    def _dedupe_and_strip(cls, v: List[str]) -> List[str]:
+        out: List[str] = []
+        for item in v or []:
+            s = (item or "").strip()
+            if s and s not in out:
+                out.append(s)
+        return out
+
+
 class ResearchFindings(BaseModel):
-    """Research results from RAG - matches research agent output"""
-    similar_sops: List[Dict] = Field(default_factory=list, description="Similar SOPs found")
-    compliance_requirements: List[str] = Field(default_factory=list, description="Regulations")
-    best_practices: List[str] = Field(default_factory=list, description="Best practices")
-    sources: List[str] = Field(default_factory=list, description="Source references")
+    """
+    Output from the research agent.
 
+    KEY FIELD: kb_format_context
+        Extracted from the actual KB documents retrieved during research.
+        Contains the formatting conventions (section names, table columns,
+        numbering style, writing tone, etc.) that all downstream agents
+        use to match the KB's style.  This is what makes the pipeline
+        KB-format-agnostic — the format is discovered at runtime, not hardcoded.
+
+    NOTE on section_insights:
+        The canonical shape is NOW an ARRAY of objects (List[SectionInsight]).
+        For backward compatibility, this model accepts legacy DICT inputs like:
+            {"6.0": {"facts": [...], "citations": [...]}, "1.0": {...}}
+        and coerces them into the list form by injecting 'section' from the key.
+    """
+    # KB-retrieved content
+    similar_sops: List[Dict[str, Any]]      = Field(default_factory=list)
+    compliance_requirements: List[str]      = Field(default_factory=list)
+    best_practices: List[str]               = Field(default_factory=list)
+    sources: List[str]                      = Field(default_factory=list)
+
+    # ✅ Per-section KB facts as an array-of-objects (LLM/JSON-schema friendly)
+    section_insights: List[SectionInsight]  = Field(
+        default_factory=list,
+        description="Array of per-section KB facts; each item includes section, facts, citations"
+    )
+
+    # Dynamic format conventions extracted from KB documents.
+    # This replaces all hardcoded format rules.
+    kb_format_context: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Formatting conventions discovered from KB documents: "
+            "section_titles, table_sections, subsection_sections, "
+            "writing_style, banned_elements, etc."
+        )
+    )
+
+    # Backward compatibility: accept dict shape and coerce to list
+    @field_validator("section_insights", mode="before")
+    @classmethod
+    def _coerce_section_insights(
+        cls,
+        v: Union[None, List[Dict[str, Any]], Dict[str, Dict[str, Any]]]
+    ) -> List[Dict[str, Any]]:
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
+        if isinstance(v, dict):
+            out: List[Dict[str, Any]] = []
+            for k, item in v.items():
+                # Ensure item is a dict and inject 'section' from the key
+                obj = dict(item or {})
+                obj.setdefault("section", str(k))
+                out.append(obj)
+            return out
+        raise TypeError("section_insights must be a list or dict")
+
+
+# ============================================================
+# QA RESULT MODEL
+# ============================================================
 
 class QAResult(BaseModel):
-    """Quality assurance results - matches QA agent output"""
-    score: float = Field(..., ge=0, le=10, description="Overall quality score 0-10")
-    feedback: str = Field(..., description="Detailed feedback")
-    issues: List[str] = Field(default_factory=list, description="Issues found")
-    approved: bool = Field(..., description="Whether SOP is approved")
-    completeness_score: float = Field(default=0.0, ge=0, le=10)
-    clarity_score: float = Field(default=0.0, ge=0, le=10)
-    compliance_score: float = Field(default=0.0, ge=0, le=10)
+    """Quality assurance evaluation scores and approval decision."""
+    score:    float = Field(..., ge=0, le=10)
+    feedback: str   = Field(...)
+    issues:   List[str] = Field(default_factory=list)
+    approved: bool  = Field(...)
 
+    completeness_score: float = Field(default=0.0, ge=0, le=10)
+    clarity_score:      float = Field(default=0.0, ge=0, le=10)
+    safety_score:       float = Field(default=0.0, ge=0, le=10)
+    compliance_score:   float = Field(default=0.0, ge=0, le=10)
+    consistency_score:  float = Field(default=0.0, ge=0, le=10)
+
+
+# ============================================================
+# MAIN WORKFLOW STATE
+# ============================================================
 
 class SOPState(BaseModel):
     """
-    Complete state for Strands workflow
+    Complete, mutable state for a single SOP generation run.
 
-    This is the SINGLE source of truth for workflow state.
-    All agents read from and write to this state.
+    LIFECYCLE:
+        sop_workflow.py creates → stored in STATE_STORE →
+        each agent reads/writes its fields → 
+        sop_workflow.py reads final state after graph completion.
+
+    KB FORMAT PROPAGATION:
+        The research agent writes kb_format_context (discovered from KB).
+        The content, formatter, and QA agents read kb_format_context
+        and use it to match the KB's style — without any hardcoded rules.
     """
 
-    # ===== INPUT PARAMETERS =====
-    topic: str = Field(..., description="SOP topic/title")
-    industry: str = Field(..., description="Industry domain")
-    target_audience: str = Field(..., description="Target users")
-    requirements: List[str] = Field(default_factory=list, description="Additional requirements")
+    # ── INPUT PARAMETERS ──────────────────────────────────────────────────
+    topic:            str       = Field(...)
+    industry:         str       = Field(...)
+    target_audience:  str       = Field(...)
+    requirements:     List[str] = Field(default_factory=list)
 
-    # ===== AGENT OUTPUTS =====
-    outline: Optional[SOPOutline] = Field(default=None, description="From planning agent")
-    research: Optional[ResearchFindings] = Field(default=None, description="From research agent")
-    content_sections: Dict[str, str] = Field(default_factory=dict, description="From content agent")
-    formatted_document: str = Field(default="", description="From formatter agent")
-    qa_result: Optional[QAResult] = Field(default=None, description="From QA agent")
+    # ── AGENT OUTPUTS ─────────────────────────────────────────────────────
+    outline:             Optional[SOPOutline]       = Field(default=None)
+    research:            Optional[ResearchFindings] = Field(default=None)
+    content_sections:    Dict[str, Any]             = Field(default_factory=dict)
+    formatted_document:  str = Field(default="")   # legacy alias
+    formatted_markdown:  str = Field(default="")   # primary output
+    qa_result:           Optional[QAResult]        = Field(default=None)
 
-    # ===== WORKFLOW CONTROL =====
-    status: WorkflowStatus = Field(default=WorkflowStatus.INIT, description="Current status")
-    current_node: Optional[str] = Field(default=None, description="Current node name")
-    retry_count: int = Field(default=0, ge=0, le=5, description="Number of retries")
-    errors: List[str] = Field(default_factory=list, description="Error log")
+    # ── KB FORMAT CONTEXT (shortcut) ──────────────────────────────────────
+    # Copied from research.kb_format_context after research completes,
+    # so agents can access it directly without going through research.
+    kb_format_context: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Dynamic KB formatting conventions — discovered at runtime"
+    )
 
-    # ===== METADATA =====
-    workflow_id: str = Field(default="", description="Unique workflow identifier")
-    started_at: Optional[datetime] = Field(default=None, description="Start timestamp")
-    completed_at: Optional[datetime] = Field(default=None, description="Completion timestamp")
-    tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
+    # ── WORKFLOW CONTROL ──────────────────────────────────────────────────
+    status:       WorkflowStatus   = Field(default=WorkflowStatus.INIT)
+    current_node: Optional[str]    = Field(default=None)
+    retry_count:  int              = Field(default=0, ge=0, le=5)
+    errors:       List[str]        = Field(default_factory=list)
+
+    planning_complete: bool  = Field(default=False)
+    research_complete: bool  = Field(default=False)
+
+    # ── METADATA ──────────────────────────────────────────────────────────
+    workflow_id:  str                 = Field(default="")
+    started_at:   Optional[datetime]  = Field(default=None)
+    completed_at: Optional[datetime]  = Field(default=None)
+    tokens_used:  int                 = Field(default=0, ge=0)
+
+    # ── AUX ───────────────────────────────────────────────────────────────
+    kb_hits:             int                 = Field(default=0, ge=0)
+    qa_policy_feedback:  Optional[List[str]] = Field(default=None)
 
     class Config:
-        """Pydantic configuration"""
-        use_enum_values = True
+        use_enum_values     = True
         validate_assignment = True
-        json_encoders = {
-            datetime: lambda v: v.isoformat() if v else None
-        }
+        extra               = "allow"
+        json_encoders       = {datetime: lambda v: v.isoformat() if v else None}
 
     def add_error(self, error: str) -> None:
-        """Add error to error log with timestamp"""
-        timestamp = datetime.utcnow().isoformat()
-        self.errors.append(f"[{timestamp}] {error}")
+        self.errors.append(f"[{datetime.utcnow().isoformat()}] {error}")
 
     def increment_tokens(self, tokens: int) -> None:
-        """Increment token counter"""
-        self.tokens_used += tokens
+        try:
+            self.tokens_used += int(tokens)
+        except Exception:
+            self.tokens_used = int(self.tokens_used or 0) + int(tokens or 0)
 
     def update_status(self, new_status: WorkflowStatus) -> None:
-        """Update workflow status"""
         self.status = new_status
 
     def is_completed(self) -> bool:
-        """Check if workflow is complete"""
         return self.status == WorkflowStatus.COMPLETED
 
     def needs_retry(self) -> bool:
-        """Check if retry is needed"""
         return self.status == WorkflowStatus.FAILED and self.retry_count < 3
