@@ -308,9 +308,9 @@ async def main():
     # =========================================================================
     # ✏️  CUSTOMIZE THESE VALUES:
     # =========================================================================
-    TOPIC    = "Your SOP Topic Here"       # ← e.g. "Employee Onboarding Process"
-    INDUSTRY = "Your Industry Here"        # ← e.g. "Healthcare", "Manufacturing"
-    AUDIENCE = "Your Target Audience Here" # ← e.g. "HR Managers and Team Leads"
+    TOPIC    = "Global Technology Infrastructure Qualification SOP"       # ← e.g. "Employee Onboarding Process"
+    INDUSTRY = "Life Science"        # ← e.g. "Healthcare", "Manufacturing"
+    AUDIENCE = "IT Qualification Engineers and System Administrators" # ← e.g. "HR Managers and Team Leads"
     # =========================================================================
 
     print(f"\n{'='*60}")

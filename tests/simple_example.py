@@ -9,7 +9,7 @@ import asyncio
 import sys
 sys.path.insert(0, '.')  # Add project root to path
 
-from src.graph.sop_workflow import generate_sop
+from app.src.graph.sop_workflow_lma import generate_sop
 
 
 async def main():
