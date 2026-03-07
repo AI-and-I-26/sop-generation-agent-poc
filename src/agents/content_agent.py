@@ -1,44 +1,43 @@
 """
-Content Agent (Option B: client-side tool execution)
+content_agent.py — Content Agent for the SOP pipeline.
 
-FOUR BUGS FIXED vs content_agent__2_.py:
+ROLE IN PIPELINE:
+    Node 3 of 5. After research, this agent writes the actual SOP text —
+    one section at a time — using the outline from the planning agent and
+    the KB-derived facts from the research agent.
 
-FIX 1 — USER PROMPT CONTRADICTED SYSTEM PROMPT
-  Old user_prompt explicitly asked for:
-    "⚠️ WARNING:", "✓ CHECKPOINT:", "time estimates per step"
-  CONTENT_SYSTEM_PROMPT banned all of those. The user prompt overrides the
-  system prompt, so the model produced exactly the junk the user prompt asked for.
-  Fix: user_prompt now instructs the model to follow its system prompt instructions
-  and explicitly repeats the ban on those patterns.
+SECTION-BY-SECTION APPROACH:
+    Generates each of the 8 canonical SOP sections as separate Bedrock calls
+    (direct boto3). This avoids Strands Agent loop unrecoverable states on
+    max_tokens, enables our own overflow retry logic, and keeps prompts small.
 
-FIX 2 — ONLY content_data["content"] WAS STORED — ALL STRUCTURE DISCARDED
-  Old code: content_sections[section_key] = content_data["content"]
-  CONTENT_SYSTEM_PROMPT returns rich per-section JSON with tables, subsections,
-  role rows, term definitions etc. All of that was thrown away; only the flat
-  "content" string reached the formatter.
-  Fix: store the full content_data dict so the formatter receives everything.
+KB ALIGNMENT:
+    Each section call includes:
+      - kb_format_context : formatting conventions extracted from the KB
+      - section_insights  : KB-derived facts for that specific section
+      - compliance requirements and best practices from research
 
-FIX 3 — _MAX_SECTIONS CAPPED AT 5 — 3 SECTIONS NEVER GENERATED
-  Old default: _MAX_SECTIONS = 5
-  The KB outline has 8 sections (1.0–8.0). Sections 6.0, 7.0, 8.0 were silently
-  skipped, which is why the generated PDF's TOC stopped at section 5.
-  Fix: default raised to 8 (all KB sections).
-
-FIX 4 — max_tokens=2048 TOO LOW FOR FULL SECTION JSON
-  Section 6.0 PROCEDURE has deep nested subsections. 2048 tokens frequently hit
-  the limit mid-JSON causing parse failures, the section was silently skipped.
-  Fix: max_tokens raised to 4096 for content generation calls.
+PATCHES INCLUDED:
+    1) Direct Bedrock calls with stop_reason handling (no inner Strands Agent).
+    2) Overflow-safe retry: on 'max_tokens' retry once in concise mode
+       with fewer facts and a word-cap hint.
+    3) kb_format_context compaction (trim long lists) to reduce prompt size.
+    4) Per-section persistence to STATE_STORE to avoid losing prior work.
+    5) Optional split of PROCEDURE (6.0) into two Bedrock calls when many
+       subsections are present, then concatenated.
+    6) Env-driven caps for per-section max_tokens, facts, cites, and split threshold.
 """
 
-import os
-import re
 import json
 import logging
-import asyncio
-from typing import Any, Dict, List, Optional
+import os
+import re
+from math import ceil
+from typing import Any, Dict, List, Optional, Tuple, Iterable
 
 import boto3
-from strands import tool
+from strands import Agent, tool
+from strands.models import BedrockModel
 
 from src.graph.state_schema import SOPState, WorkflowStatus
 from src.graph.state_store import STATE_STORE
@@ -46,359 +45,527 @@ from src.prompts.system_prompts import CONTENT_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL_ID = (
-    "arn:aws:bedrock:us-east-2:070797854596:"
-    "inference-profile/us.meta.llama3-3-70b-instruct-v1:0"
+# ── CONFIGURATION ──────────────────────────────────────────────────────────────
+
+_DEFAULT_MODEL_ARN = (
+    "arn:aws:bedrock:us-east-2:070797854596:inference-profile/global.anthropic.claude-sonnet-4-6"
 )
 _REGION = os.getenv("AWS_REGION", "us-east-2")
 
-# FIX 3: was 5 — all 8 KB sections must be generated
-_MAX_SECTIONS = int(os.getenv("MAX_CONTENT_SECTIONS", "8"))
+# Env-driven caps (tune without code changes)
+_CONTENT_MAX_TOKENS_PER_SECTION = int(os.getenv("CONTENT_MAX_TOKENS_PER_SECTION", "3000"))
+_CONTENT_MAX_FACTS_PER_SECTION  = int(os.getenv("CONTENT_MAX_FACTS_PER_SECTION", "12"))
+_CONTENT_MAX_CITES_PER_SECTION  = int(os.getenv("CONTENT_MAX_CITES_PER_SECTION", "12"))
+_PROCEDURE_SPLIT_MIN_SUBSECTIONS = int(os.getenv("CONTENT_PROCEDURE_SPLIT_MIN_SUBSECTIONS", "6"))
 
+# Log effective caps for visibility
+logger.info(
+    "Content caps | TOKENS/section=%d, FACTS/section=%d, CITES/section=%d, PROCEDURE_SPLIT_MIN=%d",
+    _CONTENT_MAX_TOKENS_PER_SECTION, _CONTENT_MAX_FACTS_PER_SECTION,
+    _CONTENT_MAX_CITES_PER_SECTION, _PROCEDURE_SPLIT_MIN_SUBSECTIONS
+)
 
-# ---------------------------------------------------------------------------
-# Robust JSON helpers (unchanged from original)
-# ---------------------------------------------------------------------------
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
-_TRAILING_COMMA_RE = re.compile(r",\s*(?=[}\]])")
-
-
-def _extract_first_braced_object(s: str) -> str:
-    if not s:
-        return ""
-    depth = 0
-    start = -1
-    for i, ch in enumerate(s):
-        if ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            if depth > 0:
-                depth -= 1
-                if depth == 0 and start != -1:
-                    return s[start:i + 1]
-    return ""
-
-
-def _extract_json_block(text: str) -> str:
-    if not text:
-        return ""
-    m = _JSON_FENCE_RE.search(text)
-    if m:
-        return m.group(1).strip()
-    fence = re.search(r"```([\s\S]*?)```", text)
-    if fence:
-        inner = fence.group(1).strip()
-        if inner.lower().startswith("json"):
-            inner = inner[4:].strip()
-        cand = _extract_first_braced_object(inner)
-        if cand:
-            return cand.strip()
-    cand = _extract_first_braced_object(text)
-    return cand.strip()
-
-
-def _escape_ctrl_in_strings(s: str) -> str:
-    out = []
-    in_str = False
-    esc = False
-    for ch in s:
-        if in_str:
-            if esc:
-                out.append(ch)
-                esc = False
-            else:
-                if ch == "\\":
-                    out.append(ch)
-                    esc = True
-                elif ch == "\"":
-                    out.append(ch)
-                    in_str = False
-                elif ch == "\n":
-                    out.append("\\n")
-                elif ch == "\r":
-                    out.append("\\r")
-                elif ch == "\t":
-                    out.append("\\t")
-                else:
-                    out.append(ch)
-        else:
-            out.append(ch)
-            if ch == "\"":
-                in_str = True
-    return "".join(out)
-
-
-def _remove_trailing_commas(s: str) -> str:
-    return _TRAILING_COMMA_RE.sub("", s)
-
-
-def _loads_lenient(text: str) -> dict:
-    if not text:
-        raise json.JSONDecodeError("empty", "", 0)
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        fixed = _escape_ctrl_in_strings(text)
-        fixed = _remove_trailing_commas(fixed)
-        return json.loads(fixed)
-
-
-def _strip_code_fences(text: str) -> str:
-    if not text:
-        return text
-    t = text.strip()
-    if t.startswith("```"):
-        parts = t.split("```")
-        candidates = [p.strip() for p in parts if "{" in p and "}" in p]
-        if candidates:
-            cleaned = candidates[0]
-            if cleaned.lower().startswith("json"):
-                cleaned = cleaned[4:].strip()
-            return cleaned
-    return t
-
-
-# ---------------------------------------------------------------------------
-# Bedrock helpers
-# ---------------------------------------------------------------------------
 def _get_model_id(env_var: str) -> str:
-    return os.getenv(env_var, _DEFAULT_MODEL_ID)
+    return os.getenv(env_var, _DEFAULT_MODEL_ARN)
 
 
-def _call_bedrock_sync(
-    model_id: str,
+# ── CANONICAL SECTION ORDER ────────────────────────────────────────────────────
+
+KB_SECTIONS = [
+    "PURPOSE",
+    "SCOPE",
+    "RESPONSIBILITIES",
+    "DEFINITIONS / ABBREVIATIONS",
+    "MATERIALS",
+    "PROCEDURE",
+    "REFERENCES",
+    "REVISION HISTORY",
+]
+
+SECTION_NUMBER_MAP: Dict[str, str] = {
+    "PURPOSE":                     "1.0",
+    "SCOPE":                       "2.0",
+    "RESPONSIBILITIES":            "3.0",
+    "DEFINITIONS / ABBREVIATIONS": "4.0",
+    "MATERIALS":                   "5.0",
+    "PROCEDURE":                   "6.0",
+    "REFERENCES":                  "7.0",
+    "REVISION HISTORY":            "8.0",
+}
+
+
+# ── HELPERS ───────────────────────────────────────────────────────────────────
+
+def _extract_text_from_bedrock_body(body_json: Dict[str, Any]) -> str:
+    """
+    Extract concatenated text from an Anthropic Messages response body.
+    Shape:
+      { "content": [ {"type": "text", "text": "..."}, ... ], "stop_reason": "..." }
+    """
+    blocks = body_json.get("content", []) or []
+    texts = [
+        b.get("text", "")
+        for b in blocks
+        if isinstance(b, dict) and b.get("type") == "text"
+    ]
+    return "".join(texts).strip()
+
+
+def _invoke_bedrock_text(
     system_prompt: str,
     user_prompt: str,
-    *,
-    max_tokens: int = 4096,   # FIX 4: was 2048
-) -> str:
-    logger.debug("=== BEDROCK CALL (Content) ===")
-    logger.debug("Model: %s | Region: %s | max_tokens=%s", model_id, _REGION, max_tokens)
-    logger.debug("User prompt (first 400 chars):\n%s", (user_prompt or "")[:400])
-
-    client = boto3.client("bedrock-runtime", region_name=_REGION)
-    response = client.converse(
-        modelId=model_id,
-        system=[{"text": system_prompt}],
-        messages=[{"role": "user", "content": [{"text": user_prompt}]}],
-        inferenceConfig={"maxTokens": max_tokens, "temperature": 0},
+    max_tokens: int,
+    model_id: Optional[str] = None,
+    temperature: float = 0.2,
+    region: Optional[str] = None,
+) -> Tuple[str, Optional[str]]:
+    """
+    Call Bedrock Anthropic Messages API directly and return (text, stop_reason).
+    """
+    client = boto3.client("bedrock-runtime", region_name=region or _REGION)
+    model = model_id or _get_model_id("MODEL_CONTENT")
+    body = {
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "system": system_prompt,
+        "messages": [{"role": "user", "content": [{"type": "text", "text": user_prompt}]}],
+    }
+    resp = client.invoke_model(
+        modelId=model,
+        contentType="application/json",
+        accept="application/json",
+        body=json.dumps(body).encode("utf-8"),
     )
-    logger.debug("Raw response: %s", json.dumps(response, default=str))
-
-    content = response.get("output", {}).get("message", {}).get("content", [])
-    if not content:
-        raise ValueError(f"Bedrock returned empty content: {response}")
-    text = "\n".join(p.get("text", "") for p in content if "text" in p).strip()
-    if not text:
-        raise ValueError(f"Bedrock returned blank text: {response}")
-    logger.debug("Extracted text (%d chars):\n%s", len(text), text[:800])
-    return text
+    raw = resp.get("body")
+    body_json = json.loads(raw.read()) if raw is not None else {}
+    text = _extract_text_from_bedrock_body(body_json)
+    stop_reason = body_json.get("stop_reason")
+    return text, stop_reason
 
 
-async def _call_bedrock_async(
-    model_id: str,
-    system_prompt: str,
-    user_prompt: str,
-    *,
-    max_tokens: int = 4096,   # FIX 4
+def _group_insights_by_section(section_insights: List[Dict[str, Any]]) -> Dict[str, Dict[str, List[str]]]:
+    """
+    Convert array-of-objects into a dict keyed by section (e.g., "6.0") with merged facts/citations.
+    Input item shape: { "section": "6.0", "facts": [..], "citations": [..] }
+    Output: { "6.0": { "facts": [...], "citations": [...] }, ... }
+    """
+    grouped: Dict[str, Dict[str, List[str]]] = {}
+    for item in section_insights or []:
+        if not isinstance(item, dict):
+            continue
+        sec = str(item.get("section") or "").strip()
+        if not sec:
+            continue
+        facts = [f for f in (item.get("facts") or []) if isinstance(f, str) and f.strip()]
+        cites = [c for c in (item.get("citations") or []) if isinstance(c, str) and c.strip()]
+        node = grouped.setdefault(sec, {"facts": [], "citations": []})
+        # de-dup extend
+        for f in facts:
+            if f not in node["facts"]:
+                node["facts"].append(f)
+        for c in cites:
+            if c not in node["citations"]:
+                node["citations"].append(c)
+    return grouped
+
+
+def _pick_insights_for_section(
+    grouped: Dict[str, Dict[str, List[str]]],
+    sec_num: str,
+    max_facts: int,
+    max_cites: int,
+) -> Dict[str, List[str]]:
+    """
+    Select compact insights for a target section number:
+      - exact match (e.g., '6.0')
+      - plus any nested subsections (e.g., '6.1', '6.2')
+    Cap counts to keep the prompt small.
+    """
+    facts: List[str] = []
+    cites: List[str] = []
+
+    exact = grouped.get(sec_num)
+    if exact:
+        facts.extend(exact.get("facts", []))
+        cites.extend(exact.get("citations", []))
+
+    prefix = sec_num + "."
+    for k, v in grouped.items():
+        if k != sec_num and k.startswith(prefix):
+            for f in v.get("facts", []):
+                if f not in facts:
+                    facts.append(f)
+            for c in v.get("citations", []):
+                if c not in cites:
+                    cites.append(c)
+
+    return {"facts": facts[:max_facts], "citations": cites[:max_cites]}
+
+
+def _pick_insights_for_prefixes(
+    grouped: Dict[str, Dict[str, List[str]]],
+    prefixes: Iterable[str],
+    max_facts: int,
+    max_cites: int,
+) -> Dict[str, List[str]]:
+    """
+    Select insights for a set of section number prefixes, e.g., {'6.1', '6.2', '6.3'}.
+    """
+    facts: List[str] = []
+    cites: List[str] = []
+    pfx_list = [p.strip() for p in prefixes if p and isinstance(p, str)]
+    for k, v in grouped.items():
+        for p in pfx_list:
+            if k == p or k.startswith(p + "."):
+                for f in v.get("facts", []):
+                    if f not in facts:
+                        facts.append(f)
+                for c in v.get("citations", []):
+                    if c not in cites:
+                        cites.append(c)
+                break
+    return {"facts": facts[:max_facts], "citations": cites[:max_cites]}
+
+
+def _outline_subsections_for(state: SOPState, sec_num: str) -> List[Tuple[str, str]]:
+    """
+    Return list of (number, title) for immediate subsections of a top-level section.
+    """
+    if not state or not state.outline or not getattr(state.outline, "sections", None):
+        return []
+    for s in state.outline.sections:
+        if s.number == sec_num and getattr(s, "subsections", None):
+            out: List[Tuple[str, str]] = []
+            for sub in s.subsections:
+                title = getattr(sub, "title", "")
+                number = getattr(sub, "number", "")
+                if number and title:
+                    out.append((number, title))
+            return out
+    return []
+
+
+def _format_subsections_lines(subs: List[Tuple[str, str]]) -> str:
+    if not subs:
+        return ""
+    return "\n".join(f"  {n} {t}" for n, t in subs)
+
+
+def _compact_kb_format_ctx(ctx: Dict[str, Any], max_titles: int = 8, max_tables: int = 3) -> Dict[str, Any]:
+    """
+    Compact large kb_format_context structures to reduce prompt size without losing signal.
+    """
+    if not isinstance(ctx, dict):
+        return ctx
+    c = dict(ctx)
+    if isinstance(c.get("section_titles"), list):
+        c["section_titles"] = c["section_titles"][:max_titles]
+    if isinstance(c.get("table_sections"), list):
+        c["table_sections"] = c["table_sections"][:max_tables]
+    if isinstance(c.get("special_elements"), list):
+        c["special_elements"] = c["special_elements"][:5]
+    if isinstance(c.get("subsection_sections"), list):
+        c["subsection_sections"] = c["subsection_sections"][:10]
+    if isinstance(c.get("prose_sections"), list):
+        c["prose_sections"] = c["prose_sections"][:10]
+    return c
+
+
+def _make_section_prompt(
+    section_name: str,
+    sec_num: str,
+    state: SOPState,
+    fmt_ctx: Dict[str, Any],
+    facts: List[str],
+    cites: List[str],
+    compliance: List[str],
+    best_practices: List[str],
+    outline_subsections_text: str,
+    concise_hint: bool = False,
 ) -> str:
-    return await asyncio.to_thread(
-        _call_bedrock_sync, model_id, system_prompt, user_prompt, max_tokens=max_tokens
+    kb_format_ctx_str = json.dumps(fmt_ctx, indent=2) if fmt_ctx else "(no kb_format_context — use standard SOP formatting)"
+    facts_s = json.dumps(facts, indent=2) if facts else "(no KB facts for this section)"
+    cites_s = json.dumps(cites[:min(5, len(cites))], indent=2) if cites else "(no citations)"
+    compliance_str  = ", ".join(compliance) if compliance else "None"
+    practices_str   = "; ".join(best_practices[:5]) if best_practices else "None"
+
+    parts: List[str] = [
+        f"Section Number: {sec_num}",
+        f"Section Title:  {section_name}",
+        f"Topic:          {state.topic}",
+        f"Industry:       {state.industry}",
+        f"Audience:       {state.target_audience}",
+        "",
+    ]
+    if outline_subsections_text:
+        parts += ["Outline subsections for this section:", outline_subsections_text, ""]
+    parts += [
+        "KB FORMAT CONTEXT — follow these conventions exactly:",
+        kb_format_ctx_str,
+        "",
+        "KB FACTS — ground all statements in these facts (do not invent):",
+        facts_s,
+        "",
+        "KB CITATIONS (for provenance; do not include raw URIs in the prose):",
+        cites_s,
+        "",
+        f"Compliance requirements to reflect: {compliance_str}",
+        f"Best practices to reflect: {practices_str}",
+        "",
+        "TASK:",
+        "Write the complete, publication-ready content for this SOP section.",
+        "Use a concise, imperative style consistent with the KB format context.",
+        "Do NOT output JSON or code fences; return plain prose only.",
+    ]
+    if concise_hint:
+        parts += ["", "CONCISE MODE: Keep this section succinct (<= 700 words)."]
+    return "\n".join(parts)
+
+
+# ── SECTION GENERATOR (direct Bedrock) ─────────────────────────────────────────
+
+def _generate_section_direct(
+    section_name: str,
+    sec_num: str,
+    state: SOPState,
+    facts: List[str],
+    cites: List[str],
+    compliance: List[str],
+    best_practices: List[str],
+    outline_subsections_text: str,
+) -> str:
+    """
+    Direct Bedrock generation with overflow-safe retry.
+    Returns plain text.
+    """
+    fmt_ctx = _compact_kb_format_ctx(state.kb_format_context or {})
+    # First attempt
+    prompt = _make_section_prompt(
+        section_name=section_name,
+        sec_num=sec_num,
+        state=state,
+        fmt_ctx=fmt_ctx,
+        facts=facts,
+        cites=cites,
+        compliance=compliance,
+        best_practices=best_practices,
+        outline_subsections_text=outline_subsections_text,
+        concise_hint=False,
+    )
+    text, stop = _invoke_bedrock_text(
+        system_prompt=CONTENT_SYSTEM_PROMPT,
+        user_prompt=prompt,
+        max_tokens=_CONTENT_MAX_TOKENS_PER_SECTION,
+        model_id=_get_model_id("MODEL_CONTENT"),
+        temperature=0.2,
     )
 
+    if stop == "max_tokens" or not text:
+        logger.warning("Section '%s' hit max_tokens or empty text on first attempt; retrying concise mode.", section_name)
+        reduced_facts = facts[: max(3, len(facts) // 2)]
+        prompt2 = _make_section_prompt(
+            section_name=section_name,
+            sec_num=sec_num,
+            state=state,
+            fmt_ctx=fmt_ctx,
+            facts=reduced_facts,
+            cites=cites[:max(3, len(cites)//2)],
+            compliance=compliance,
+            best_practices=best_practices,
+            outline_subsections_text=outline_subsections_text,
+            concise_hint=True,
+        )
+        text2, _ = _invoke_bedrock_text(
+            system_prompt=CONTENT_SYSTEM_PROMPT,
+            user_prompt=prompt2,
+            max_tokens=max(1200, _CONTENT_MAX_TOKENS_PER_SECTION - 600),
+            model_id=_get_model_id("MODEL_CONTENT"),
+            temperature=0.2,
+        )
+        return (text2 or "").strip()
 
-def _extract_workflow_id_from_prompt(prompt: str) -> Optional[str]:
-    m = re.search(r"workflow_id::([^\s\|]+)", prompt or "")
-    return m.group(1) if m else None
+    return (text or "").strip()
 
 
-# ---------------------------------------------------------------------------
-# Graph-level tool
-# ---------------------------------------------------------------------------
+# ── STRANDS TOOL ──────────────────────────────────────────────────────────────
+
 @tool
 async def run_content(prompt: str) -> str:
-    """Execute the SOP content generation step.
-
-    Args:
-        prompt: Graph message string containing 'workflow_id::<id>'.
     """
-    logger.info(">>> run_content called | prompt: %s", (prompt or "")[:160])
+    Execute the SOP content generation step.
+    Generates ALL 8 canonical SOP sections sequentially (direct Bedrock).
+    Stores results in SOPState.content_sections as { section_title: text }.
 
-    workflow_id = _extract_workflow_id_from_prompt(prompt or "") or ""
+    Expected prompt contains: 'workflow_id::<id>'
+    """
+    logger.info(">>> run_content | prompt: %.160s", (prompt or ""))
+
+    m = re.search(r"workflow_id::([^\s\|]+)", prompt or "")
+    workflow_id = m.group(1) if m else ""
     if not workflow_id:
-        raise ValueError("Missing workflow_id in prompt.")
+        return "ERROR: Missing workflow_id in prompt. Expected 'workflow_id::<id>'."
 
     state: SOPState = STATE_STORE.get(workflow_id)
     if state is None:
-        msg = f"ERROR: no state for workflow_id='{workflow_id}' | keys={list(STATE_STORE.keys())}"
-        logger.error(msg)
-        return msg
-
-    if not getattr(state, "outline", None) or not getattr(state.outline, "sections", None):
-        err = "No outline available for content generation"
-        logger.error(err)
-        if hasattr(state, "add_error"):
-            state.add_error(err)
-        state.status = WorkflowStatus.FAILED
-        return f"workflow_id::{workflow_id} | Content FAILED: {err}"
+        return f"ERROR: no state found for workflow_id={workflow_id}"
 
     try:
-        # Extract research context
-        research_data: Dict[str, Any] = {}
-        if getattr(state, "research", None) is not None:
-            if hasattr(state.research, "dict"):
-                research_data = state.research.dict()
-            elif hasattr(state.research, "__dict__"):
-                research_data = dict(state.research.__dict__)
-
-        best_practices: List[str] = research_data.get("best_practices") or []
-        compliance: List[str] = research_data.get("compliance_requirements") or []
-        section_insights: Dict = research_data.get("section_insights") or {}
-
-        model_id = _get_model_id("MODEL_CONTENT")
-        max_sections = max(1, _MAX_SECTIONS)   # FIX 3: now defaults to 8
-        generated = 0
-        # FIX 2: store full content_data dicts, not just ["content"] strings
-        content_sections: Dict[str, Any] = {}
-
-        for idx, section in enumerate(state.outline.sections or []):
-            if generated >= max_sections:
-                break
-
-            section_title = getattr(section, "title", f"Section {idx + 1}") or f"Section {idx + 1}"
-
-            # Relevant KB insights for this specific section
-            section_key_map = {
-                "PURPOSE": "1.0",
-                "SCOPE": "2.0",
-                "RESPONSIBILITIES": "3.0",
-                "DEFINITIONS / ABBREVIATIONS": "4.0",
-                "MATERIALS": "5.0",
-                "PROCEDURE": "6.0",
-                "REFERENCES": "7.0",
-                "REVISION HISTORY": "8.0",
-            }
-            insight_key = section_key_map.get(section_title.upper(), "")
-            kb_insight = section_insights.get(insight_key, {})
-
-            # ---------------------------------------------------------------
-            # FIX 1: user_prompt no longer asks for WARNING / CHECKPOINT /
-            # time estimates. It explicitly mirrors the system prompt bans.
-            # ---------------------------------------------------------------
-            user_prompt = (
-                f"Write the content for this SOP section following your "
-                f"system instructions exactly.\n\n"
-                f"Section: {section_title}\n"
-                f"Topic: {state.topic}\n"
-                f"Industry: {state.industry}\n"
-                f"Target Audience: {state.target_audience}\n\n"
-                f"KB insights for this section:\n"
-                f"{json.dumps(kb_insight, indent=2) if kb_insight else 'None'}\n\n"
-                f"Additional best practices from KB: "
-                f"{', '.join(best_practices) if best_practices else 'None'}\n"
-                f"Compliance requirements: "
-                f"{', '.join(compliance) if compliance else 'None'}\n\n"
-                f"CRITICAL — your output must NOT contain any of:\n"
-                f"  'Method:', 'Acceptance Criteria:', 'Time Estimate:',\n"
-                f"  'Safety Considerations:', '⚠️ WARNING:', '✓ CHECKPOINT:',\n"
-                f"  'Quality Checkpoints:', 'Overall Time Estimate:'\n\n"
-                f"Return ONLY the JSON object for the '{section_title}' section "
-                f"using the exact schema defined in your instructions. "
-                f"No markdown, no code fences, no text outside the JSON."
+        if not state.outline or not getattr(state.outline, "sections", None):
+            raise ValueError(
+                "No outline available for content generation. "
+                "Ensure planning agent completed successfully."
             )
 
-            last_err: Optional[Exception] = None
-            raw_text: Optional[str] = None
-            for attempt in range(1, 4):
-                try:
-                    raw_text = await _call_bedrock_async(
-                        model_id,
-                        CONTENT_SYSTEM_PROMPT,
-                        user_prompt,
-                        max_tokens=4096,   # FIX 4
+        if not state.research:
+            raise ValueError(
+                "No research findings in state. Ensure research agent completed successfully."
+            )
+
+        # Pull research fields
+        rf = state.research
+        best_practices: List[str] = list(getattr(rf, "best_practices", []) or [])
+        compliance: List[str]     = list(getattr(rf, "compliance_requirements", []) or [])
+        section_insights_raw      = list(getattr(rf, "section_insights", []) or [])
+
+        # Group insights by section number according to the list schema
+        grouped = _group_insights_by_section(section_insights_raw)
+
+        # Prepare container; persist early to ensure structure exists
+        state.content_sections = state.content_sections or {}
+        STATE_STORE[workflow_id] = state
+
+        # Generate in canonical order (sequential to avoid rate throttling)
+        for section_name in KB_SECTIONS:
+            sec_num = SECTION_NUMBER_MAP.get(section_name, "")
+
+            # Handle optional split for PROCEDURE if many subsections
+            if section_name == "PROCEDURE":
+                subs = _outline_subsections_for(state, sec_num)
+                if len(subs) >= _PROCEDURE_SPLIT_MIN_SUBSECTIONS:
+                    logger.info(
+                        "Splitting PROCEDURE into two parts (subsections=%d) | workflow_id=%s",
+                        len(subs), workflow_id
                     )
-                    break
-                except Exception as e:
-                    last_err = e
-                    logger.warning(
-                        "Content Bedrock failed (section='%s', attempt %d/3): %s",
-                        section_title, attempt, e
+                    mid = ceil(len(subs) / 2)
+                    part1_prefixes = [n for (n, _) in subs[:mid]]
+                    part2_prefixes = [n for (n, _) in subs[mid:]]
+
+                    sel1 = _pick_insights_for_prefixes(
+                        grouped=grouped,
+                        prefixes=part1_prefixes,
+                        max_facts=_CONTENT_MAX_FACTS_PER_SECTION,
+                        max_cites=_CONTENT_MAX_CITES_PER_SECTION,
                     )
-                    if attempt < 3:
-                        await asyncio.sleep(0.75 * attempt)
-            else:
-                logger.warning("Skipping '%s' after 3 failed attempts: %s", section_title, last_err)
-                if hasattr(state, "add_error"):
-                    state.add_error(f"Content section '{section_title}' failed: {last_err}")
-                continue
-
-            try:
-                json_str = _extract_json_block(raw_text or "")
-                if not json_str:
-                    json_str = _strip_code_fences(raw_text or "")
-                content_data = _loads_lenient(json_str)
-
-                if "section_title" not in content_data or "content" not in content_data:
-                    raise ValueError(
-                        f"Model response missing 'section_title' or 'content'. "
-                        f"Keys: {list(content_data.keys())}"
+                    sel2 = _pick_insights_for_prefixes(
+                        grouped=grouped,
+                        prefixes=part2_prefixes,
+                        max_facts=_CONTENT_MAX_FACTS_PER_SECTION,
+                        max_cites=_CONTENT_MAX_CITES_PER_SECTION,
                     )
 
-                section_key = content_data.get("section_title") or section_title
+                    outline1 = _format_subsections_lines([(n, t) for (n, t) in subs[:mid]])
+                    outline2 = _format_subsections_lines([(n, t) for (n, t) in subs[mid:]])
 
-                # FIX 2: store full dict — tables, subsections, everything
-                content_sections[section_key] = content_data
+                    text1 = _generate_section_direct(
+                        section_name=f"{section_name} — Part 1",
+                        sec_num=sec_num,
+                        state=state,
+                        facts=sel1.get("facts", []),
+                        cites=sel1.get("citations", []),
+                        compliance=compliance,
+                        best_practices=best_practices,
+                        outline_subsections_text=outline1,
+                    )
+                    state.content_sections[f"{section_name} (Part 1)"] = text1
+                    state.increment_tokens(2000)
+                    STATE_STORE[workflow_id] = state  # persist after part 1
 
-                if hasattr(state, "increment_tokens"):
-                    state.increment_tokens(2500)
-                generated += 1
+                    text2 = _generate_section_direct(
+                        section_name=f"{section_name} — Part 2",
+                        sec_num=sec_num,
+                        state=state,
+                        facts=sel2.get("facts", []),
+                        cites=sel2.get("citations", []),
+                        compliance=compliance,
+                        best_practices=best_practices,
+                        outline_subsections_text=outline2,
+                    )
+                    # Concatenate parts for the canonical key as well
+                    full_text = (text1.rstrip() + "\n\n" + text2.lstrip()).strip()
+                    state.content_sections[section_name] = full_text
+                    state.increment_tokens(2000)
+                    STATE_STORE[workflow_id] = state  # persist after full combine
 
-                logger.info(
-                    "Generated section '%s' | keys=%s | wf=%s",
-                    section_key, list(content_data.keys()), workflow_id
-                )
+                    logger.info("Generated PROCEDURE in two parts | workflow_id=%s", workflow_id)
+                    continue  # next section
 
-            except Exception as e:
-                logger.warning("Parse failed for '%s': %s", section_title, e)
-                if hasattr(state, "add_error"):
-                    state.add_error(f"Content section '{section_title}' parse failed: {e}")
-                continue
+            # Default single-pass generation for other sections (or small Procedure)
+            selected = _pick_insights_for_section(
+                grouped=grouped,
+                sec_num=sec_num,
+                max_facts=_CONTENT_MAX_FACTS_PER_SECTION,
+                max_cites=_CONTENT_MAX_CITES_PER_SECTION,
+            )
+            subs = _outline_subsections_for(state, sec_num)
+            outline_text = _format_subsections_lines(subs)
 
-        if not content_sections:
-            raise ValueError("No valid content sections were generated.")
+            logger.info(
+                "Generating section '%s' (%s) | workflow_id=%s | facts=%d, cites=%d",
+                section_name, sec_num, workflow_id,
+                len(selected.get("facts", [])), len(selected.get("citations", []))
+            )
 
-        prev = getattr(state, "content_sections", None) or {}
-        prev.update(content_sections)
-        state.content_sections = prev
-        state.status = WorkflowStatus.WRITTEN
+            text = _generate_section_direct(
+                section_name=section_name,
+                sec_num=sec_num,
+                state=state,
+                facts=selected.get("facts", []),
+                cites=selected.get("citations", []),
+                compliance=compliance,
+                best_practices=best_practices,
+                outline_subsections_text=outline_text,
+            )
+
+            # Persist after each section
+            state.content_sections[section_name] = text
+            state.increment_tokens(2200)
+            STATE_STORE[workflow_id] = state
+
+        # Mark state
+        state.status       = WorkflowStatus.WRITTEN
         state.current_node = "content"
+        STATE_STORE[workflow_id] = state
 
         logger.info(
-            "Content complete — %d sections | wf=%s", len(content_sections), workflow_id
+            "Content generation complete — %d sections | workflow_id=%s",
+            len(state.content_sections or {}), workflow_id
         )
+
         return (
             f"workflow_id::{workflow_id} | "
-            f"Content complete: {len(content_sections)} sections for '{state.topic}'"
+            f"Content complete: {len(state.content_sections or {})} sections written for '{state.topic}'"
         )
 
     except Exception as e:
-        logger.exception("Content FAILED wf=%s", workflow_id)
-        if hasattr(state, "add_error"):
-            state.add_error(f"Content generation failed: {e}")
+        logger.error("Content generation FAILED: %s", e, exc_info=True)
+        state.add_error(f"Content generation failed: {str(e)}")
         state.status = WorkflowStatus.FAILED
+        STATE_STORE[workflow_id] = state
         return f"workflow_id::{workflow_id} | Content FAILED: {e}"
 
 
-# ---------------------------------------------------------------------------
-# Node entry point (unchanged interface — drop-in replacement)
-# ---------------------------------------------------------------------------
-async def run_content_node(
-    prompt: str,
-    *,
-    use_llama_dispatch: bool = False,
-) -> str:
-    logger.info(">>> run_content_node | use_llama_dispatch=%s", use_llama_dispatch)
-    # Always use direct path — dispatch mode not needed
-    return await run_content(prompt=prompt)
+# ── NODE AGENT ────────────────────────────────────────────────────────────────
+# The outer agent just routes to the tool; low token budget is fine.
+
+content_agent = Agent(
+    name="ContentNode",
+    model=BedrockModel(model_id=_get_model_id("MODEL_CONTENT"), max_tokens=1024),
+    system_prompt=(
+        "You are the content generation node in an SOP generation pipeline. "
+        "When you receive a message, IMMEDIATELY call the run_content tool "
+        "with the full message as the prompt argument. "
+        "Do not add any commentary — just call the tool and return its result."
+    ),
+    tools=[run_content],
+)
