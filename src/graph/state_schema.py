@@ -1,35 +1,15 @@
-"""
-state_schema.py — Pydantic models for the SOP generation workflow.
-
-PURPOSE:
-    Defines the single source of truth for all data that flows through
-    the multi-agent SOP pipeline.  Every agent reads from and writes to
-    an SOPState instance; the workflow orchestrator seeds and harvests it.
-
-DESIGN PRINCIPLE — NO HARDCODED FORMAT RULES:
-    SOPState carries a `kb_format_context` field populated by the research
-    agent.  This field holds the formatting conventions extracted from
-    whatever documents are in YOUR Knowledge Base — section titles, table
-    structures, numbering patterns, writing style, etc.  All downstream
-    agents (content, formatter, QA) read from this field rather than
-    from any hardcoded template, so the output automatically mirrors your KB.
-
-DEPENDENCY CHAIN:
-    state_schema.py
-        └─ used by state_store.py (keyed storage)
-        └─ used by every agent (planning, research, content, formatter, qa)
-        └─ used by sop_workflow.py (orchestration)
-"""
+from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic.config import ConfigDict
 
 
 # ============================================================
-# WORKFLOW STATUS ENUM
+# WORKFLOW STATUS ENUM (exported and defined BEFORE SOPState)
 # ============================================================
 class WorkflowStatus(str, Enum):
     INIT        = "init"
@@ -48,20 +28,19 @@ class WorkflowStatus(str, Enum):
 
 
 # ============================================================
-# OUTLINE MODELS
+# OUTLINE MODELS (define BEFORE SOPState)
 # ============================================================
-
 class OutlineSubsection(BaseModel):
     """
     Recursive nested subsection.
     Supports any depth: 2.1 → 2.1.1 → 2.1.1.1, etc.
-    Section numbers and titles come from the KB's actual structure —
-    not from any hardcoded template.
+    Section numbers and titles come from the KB's actual structure — not hardcoded.
     """
     number: str = Field(..., description="Section number e.g. '2.1', '6.3.1'")
-    title: str  = Field(..., description="Section title text")
+    title:  str = Field(..., description="Section title text")
     subsections: List["OutlineSubsection"] = Field(default_factory=list)
 
+# Resolve self forward reference for nested recursion
 OutlineSubsection.model_rebuild()
 
 
@@ -71,7 +50,7 @@ class OutlineSection(BaseModel):
     Numbers and titles are derived from the KB at runtime.
     """
     number: str = Field(..., description="Top-level number e.g. '1.0'")
-    title: str  = Field(..., description="Exact section title")
+    title:  str = Field(..., description="Exact section title")
     subsections: List[OutlineSubsection] = Field(default_factory=list)
 
 
@@ -80,22 +59,21 @@ class SOPOutline(BaseModel):
     Full SOP outline produced by the planning agent.
     The section structure mirrors whatever the KB documents use.
     """
-    title: str      = Field(..., description="SOP document title")
-    industry: str   = Field(..., description="Industry domain")
-    audience: Optional[str] = Field(default=None)
+    title: str                 = Field(..., description="SOP document title")
+    industry: str              = Field(..., description="Industry domain")
+    audience: Optional[str]    = Field(default=None)
     sections: List[OutlineSection] = Field(..., min_length=1)
-    estimated_pages: int = Field(default=10, ge=1, le=200)
+    estimated_pages: int       = Field(default=10, ge=1, le=200)
 
 
 # ============================================================
 # RESEARCH FINDINGS MODEL
 # ============================================================
-
 class SectionInsight(BaseModel):
     """
     Normalized per-section facts from the KB.
 
-    Shape example:
+    Example:
         {
           "section": "6.0",
           "facts": ["Backups must be tested quarterly", "..."],
@@ -129,37 +107,27 @@ class ResearchFindings(BaseModel):
     KEY FIELD: kb_format_context
         Extracted from the actual KB documents retrieved during research.
         Contains the formatting conventions (section names, table columns,
-        numbering style, writing tone, etc.) that all downstream agents
-        use to match the KB's style.  This is what makes the pipeline
-        KB-format-agnostic — the format is discovered at runtime, not hardcoded.
-
-    NOTE on section_insights:
-        The canonical shape is NOW an ARRAY of objects (List[SectionInsight]).
-        For backward compatibility, this model accepts legacy DICT inputs like:
-            {"6.0": {"facts": [...], "citations": [...]}, "1.0": {...}}
-        and coerces them into the list form by injecting 'section' from the key.
+        numbering style, writing tone, etc.) that all downstream agents use.
     """
-    # KB-retrieved content
-    similar_sops: List[Dict[str, Any]]      = Field(default_factory=list)
-    compliance_requirements: List[str]      = Field(default_factory=list)
-    best_practices: List[str]               = Field(default_factory=list)
-    sources: List[str]                      = Field(default_factory=list)
+    similar_sops: List[Dict[str, Any]] = Field(default_factory=list)
+    compliance_requirements: List[str] = Field(default_factory=list)
+    best_practices: List[str] = Field(default_factory=list)
+    sources: List[str] = Field(default_factory=list)
 
-    # ✅ Per-section KB facts as an array-of-objects (LLM/JSON-schema friendly)
-    section_insights: List[SectionInsight]  = Field(
+    # ✅ Array-of-objects (LLM/JSON friendly)
+    section_insights: List[SectionInsight] = Field(
         default_factory=list,
-        description="Array of per-section KB facts; each item includes section, facts, citations"
+        description="Array of per-section KB facts; each item includes section, facts, citations",
     )
 
-    # Dynamic format conventions extracted from KB documents.
-    # This replaces all hardcoded format rules.
+    # Discovered formatting conventions — replaces hardcoded rules.
     kb_format_context: Optional[Dict[str, Any]] = Field(
         default=None,
         description=(
             "Formatting conventions discovered from KB documents: "
             "section_titles, table_sections, subsection_sections, "
             "writing_style, banned_elements, etc."
-        )
+        ),
     )
 
     # Backward compatibility: accept dict shape and coerce to list
@@ -176,7 +144,6 @@ class ResearchFindings(BaseModel):
         if isinstance(v, dict):
             out: List[Dict[str, Any]] = []
             for k, item in v.items():
-                # Ensure item is a dict and inject 'section' from the key
                 obj = dict(item or {})
                 obj.setdefault("section", str(k))
                 out.append(obj)
@@ -187,7 +154,6 @@ class ResearchFindings(BaseModel):
 # ============================================================
 # QA RESULT MODEL
 # ============================================================
-
 class QAResult(BaseModel):
     """Quality assurance evaluation scores and approval decision."""
     score:    float = Field(..., ge=0, le=10)
@@ -203,9 +169,8 @@ class QAResult(BaseModel):
 
 
 # ============================================================
-# MAIN WORKFLOW STATE
+# MAIN WORKFLOW STATE (define LAST)
 # ============================================================
-
 class SOPState(BaseModel):
     """
     Complete, mutable state for a single SOP generation run.
@@ -228,19 +193,29 @@ class SOPState(BaseModel):
     requirements:     List[str] = Field(default_factory=list)
 
     # ── AGENT OUTPUTS ─────────────────────────────────────────────────────
-    outline:             Optional[SOPOutline]       = Field(default=None)
-    research:            Optional[ResearchFindings] = Field(default=None)
-    content_sections:    Dict[str, Any]             = Field(default_factory=dict)
+    outline:             Optional["SOPOutline"]       = Field(default=None)
+    research:            Optional["ResearchFindings"] = Field(default=None)
+    content_sections:    Dict[str, Any]               = Field(default_factory=dict)
     formatted_document:  str = Field(default="")   # legacy alias
     formatted_markdown:  str = Field(default="")   # primary output
-    qa_result:           Optional[QAResult]        = Field(default=None)
+    qa_result:           Optional["QAResult"]        = Field(default=None)
 
     # ── KB FORMAT CONTEXT (shortcut) ──────────────────────────────────────
-    # Copied from research.kb_format_context after research completes,
-    # so agents can access it directly without going through research.
     kb_format_context: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="Dynamic KB formatting conventions — discovered at runtime"
+        description="Dynamic KB formatting conventions — discovered at runtime",
+    )
+
+    # ── NEW: KB TEMPLATE ENFORCEMENT (header/footer) ──────────────────────
+    # Placeholders like {{title}}, {{document_id}}, {{version}}, {{effective_date}},
+    # {{industry}}, {{target_audience}} will be replaced at runtime by formatter.
+    kb_header_template: Optional[str] = Field(
+        default="",
+        description="Exact KB header template with placeholders (e.g., '{{title}}').",
+    )
+    kb_footer_template: Optional[str] = Field(
+        default="",
+        description="Exact KB footer template text.",
     )
 
     # ── WORKFLOW CONTROL ──────────────────────────────────────────────────
@@ -262,12 +237,14 @@ class SOPState(BaseModel):
     kb_hits:             int                 = Field(default=0, ge=0)
     qa_policy_feedback:  Optional[List[str]] = Field(default=None)
 
-    class Config:
-        use_enum_values     = True
-        validate_assignment = True
-        extra               = "allow"
-        json_encoders       = {datetime: lambda v: v.isoformat() if v else None}
+    # Pydantic v2-style config
+    model_config = ConfigDict(
+        use_enum_values=True,
+        validate_assignment=True,
+        extra="allow",
+    )
 
+    # --------------- Convenience methods ----------------
     def add_error(self, error: str) -> None:
         self.errors.append(f"[{datetime.utcnow().isoformat()}] {error}")
 
@@ -285,3 +262,32 @@ class SOPState(BaseModel):
 
     def needs_retry(self) -> bool:
         return self.status == WorkflowStatus.FAILED and self.retry_count < 3
+
+    # --------------- Field-level normalization ----------------
+    @staticmethod
+    def _norm_template(s: Optional[str], cap: int = 20000) -> str:
+        """Normalize template strings: trim and cap size."""
+        if not s:
+            return ""
+        s = str(s).strip()
+        if len(s) > cap:
+            s = s[:cap]
+        return s
+
+    @field_validator("kb_header_template", "kb_footer_template", mode="before")
+    @classmethod
+    def _trim_templates_fields(cls, v: Optional[str]) -> str:
+        return SOPState._norm_template(v)
+
+
+# Explicit export list helps avoid accidental non-export
+__all__ = [
+    "WorkflowStatus",
+    "OutlineSubsection",
+    "OutlineSection",
+    "SOPOutline",
+    "SectionInsight",
+    "ResearchFindings",
+    "QAResult",
+    "SOPState",
+]
