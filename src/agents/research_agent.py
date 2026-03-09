@@ -1,690 +1,1230 @@
 """
-Research Agent - Module 5, Section 5.1 (Option B: client-side tool execution)
+research_agent.py — Research Agent for the SOP pipeline.
 
-Role:
-  Performs research using RAG (Bedrock Knowledge Base) and other client-side helpers,
-  then synthesizes findings with an LLM (Bedrock Converse) into structured JSON that
-  is persisted to the graph's STATE_STORE.
+ROLE IN PIPELINE:
+    Node 2 of 5.  After the planning agent produces an outline, the research
+    agent queries the Bedrock Knowledge Base (KB) to retrieve existing SOP
+    documents that match the new SOP's topic.  Retrieved chunks are then
+    synthesised by Claude into structured ResearchFindings that include:
+      • Content facts per SOP section (section_insights)
+      • Formatting conventions observed in the KB documents (kb_format_context)
 
-GRAPH INTEGRATION PATTERN:
-  - The graph sends a plain string that includes 'workflow_id::<id>'.
-  - We keep a module-level STATE_STORE keyed by workflow_id (same as planning).
-  - This module exposes:
-      * async @tool run_research(prompt: str) -> str   (does the real work)
-      * async run_research_node(prompt: str, use_llama_dispatch: bool=False) -> str
-  - The graph should call run_research_node(prompt, use_llama_dispatch=False)
-    via the LocalNodeAgent wrapper (see sop_workflow.py refactor).
+ASSUMPTION: THE KB ALWAYS CONTAINS SOP DOCUMENTS.
+    This agent is designed around the guarantee that the KB will always hold
+    at least one SOP document.  Therefore:
+      - Zero KB hits is NEVER acceptable — it indicates a query problem.
+      - The agent retries with progressively broader queries until hits arrive.
+      - kb_format_context MUST always be populated; if LLM synthesis misses it,
+        a dedicated format-extraction pass is run automatically.
+      - There is no fallback to "skip KB" — the KB is the source of truth.
 
-ARCHITECTURE (Option B: client-side tool execution):
-  - We do NOT rely on Bedrock server-side tool use.
-  - All tool decisions and execution happen client-side.
-  - Optionally, you can ask the model to output a JSON "function-call" string,
-    parse it locally, validate, and then dispatch to the local tool. This preserves
-    a function-calling surface while avoiding server-side invocation.
+GUARANTEED-HITS RETRIEVAL STRATEGY:
+    Round 1 — Rich topic + industry + outline-section queries
+    Round 2 — Shortened keyword-only variants
+    Round 3 — Universal SOP structural terms (always match any SOP in any KB)
+    Round 4 — Single-word atomic SOP terms (absolute last resort)
 
-DEBUG LOGGING:
-  Set LOG_LEVEL=DEBUG in your environment or add this to your entry point:
-      import logging
-      logging.basicConfig(level=logging.DEBUG)
-  You will then see request/response details for Bedrock calls, as well as KB lookups.
+    All queries within a round run concurrently; results are deduplicated by
+    SHA-256 content hash, keeping the highest-scoring copy of each chunk.
+    Score filtering is disabled (set KB_MIN_SCORE > 0 only to exclude noise).
+
+ANTHROPIC STRUCTURED OUTPUTS (InvokeModel path):
+    The research agent uses InvokeModel with
+    output_config.format.type = "json_schema", enforcing the ResearchFindings
+    schema at the API level.
+
+ENVIRONMENT VARIABLES (all optional):
+    MODEL_RESEARCH    — Bedrock model ID (default: claude-sonnet-4-6)
+    AWS_REGION        — AWS region (default: us-east-2)
+    KB_MAX_RESULTS    — max KB hits per query (default: 20)
+    KB_MIN_SCORE      — minimum relevance score to keep a hit (default: 0.0)
+                        Set to 0.0 to never filter — recommended when KB is
+                        always present.  Increase only to suppress noise.
+    RESEARCH_DISABLE_LLM — skip LLM synthesis; return raw KB chunks (default: false)
 """
 
-# -----------------------------
-# Standard library imports
-# -----------------------------
-import os
-import re
+import asyncio
+import hashlib
 import json
 import logging
-import asyncio
-from typing import Any, Dict, List, Optional
+import os
+import re
+import copy
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
-# -----------------------------
-# External dependencies
-# -----------------------------
-import boto3               # AWS SDK for Python: used for Bedrock Converse and KB runtime
-from strands import tool   # Optional decorator marking callable as a "tool" for your orchestration
+import boto3
+from strands import Agent, tool
+from strands.models import BedrockModel
 
-# -----------------------------
-# Domain types & state store
-# -----------------------------
-from src.graph.state_schema import SOPState, ResearchFindings, WorkflowStatus
+from src.graph.state_schema import ResearchFindings, SOPState, WorkflowStatus
 from src.graph.state_store import STATE_STORE
+from src.prompts.system_prompts import RESEARCH_SYSTEM_PROMPT
 
-# -----------------------------
-# System prompt import (new path preferred; fallback for older repo layout)
-# -----------------------------
-
-from src.prompts.system_prompts import RESEARCH_SYSTEM_PROMPT  # preferred path
-
-# Module-level logger (inherits config from your entry point)
 logger = logging.getLogger(__name__)
 
-# -----------------------------------------------------------------------------
-# Configuration (regions, model, knowledge base)
-# -----------------------------------------------------------------------------
-# Default Bedrock model (Meta Llama 3.3 70B Instruct). Overridable via env vars.
+# ── CONFIGURATION ──────────────────────────────────────────────────────────────
+
 _DEFAULT_MODEL_ID = (
-    "arn:aws:bedrock:us-east-2:070797854596:"
-    "inference-profile/us.meta.llama3-3-70b-instruct-v1:0"
+    "arn:aws:bedrock:us-east-2:070797854596:inference-profile/global.anthropic.claude-sonnet-4-6"
 )
-
-# Region for Bedrock Converse API. Override via AWS_REGION.
-_REGION = os.getenv("AWS_REGION", "us-east-2")
-
-# Region for Bedrock Agent Runtime (Knowledge Base). Typically matches _REGION for lower latency.
+_REGION    = os.getenv("AWS_REGION", "us-east-2")
 _KB_REGION = os.getenv("AWS_REGION", "us-east-2")
 
-# Knowledge Base ID used for RAG retrieval. Must be set in your environment to enable KB queries.
-# If absent, KB retrieval is skipped with a warning.
-_KB_ID = os.getenv("KNOWLEDGE_BASE_ID", "1NR6BI4TNO")
 
-# -----------------------------------------------------------------------------
-# Robust JSON extraction & lenient parsing helpers
-# -----------------------------------------------------------------------------
-# Precompiled regex: capture a JSON object within ```json ... ``` fenced blocks
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
+# --- ADD: Lightweight KB header/footer extraction utilities ---
 
-# Precompiled regex: match trailing commas before closing '}' or ']' (invalid in strict JSON)
-_TRAILING_COMMA_RE = re.compile(r",\s*(?=[}\]])")
+HEADER_MAX_LINES = 12     # top slice to search for header
+FOOTER_MAX_LINES = 15     # bottom slice to search for footer
+MIN_HEADER_LEN = 40       # guardrails so we don't pick trivial lines
+MIN_FOOTER_LEN = 40
 
+HEADER_ANCHORS = (
+    r"^title[:\s]", r"^document\s*id[:\s]", r"^doc\s*id[:\s]", r"^version[:\s]",
+    r"^effective\s*date[:\s]", r"^owner[:\s]", r"^audience[:\s]",
+)
+FOOTER_ANCHORS = (
+    r"^copyright", r"^©", r"^confidential", r"^disclaimer", r"^revision\s*history",
+    r"^change\s*log", r"^last\s*updated", r"^contact[:\s]",
+)
 
-def _extract_first_braced_object(s: str) -> str:
+def _normalize_line(line: str) -> str:
+    return re.sub(r"\s+", " ", (line or "").strip())
+
+def _slice_top(text: str, n: int) -> str:
+    return "\n".join(text.splitlines()[:n])
+
+def _slice_bottom(text: str, n: int) -> str:
+    lines = text.splitlines()
+    return "\n".join(lines[-n:]) if lines else ""
+
+def _looks_like_header(block: str) -> bool:
+    lines = [_normalize_line(l) for l in block.splitlines() if _normalize_line(l)]
+    if not lines:
+        return False
+    joined = "\n".join(lines).lower()
+    # At least one anchor and reasonable length
+    has_anchor = any(re.search(a, joined, re.IGNORECASE | re.MULTILINE) for a in HEADER_ANCHORS)
+    return has_anchor and len(joined) >= MIN_HEADER_LEN
+
+def _looks_like_footer(block: str) -> bool:
+    lines = [_normalize_line(l) for l in block.splitlines() if _normalize_line(l)]
+    if not lines:
+        return False
+    joined = "\n".join(lines).lower()
+    has_anchor = any(re.search(a, joined, re.IGNORECASE | re.MULTILINE) for a in FOOTER_ANCHORS)
+    return has_anchor and len(joined) >= MIN_FOOTER_LEN
+
+def _derive_template_from_text(sample: str) -> Tuple[str, str]:
     """
-    Return the first balanced {...} object found in the text, else ''.
-
-    Rationale:
-      LLMs sometimes produce prose that surrounds JSON. We scan for the first
-      balanced brace block to salvage likely JSON payloads.
+    Return (header_template, footer_template).
+    This is heuristic: grabs consistent-looking blocks from multiple docs.
+    You can replace with a smarter extractor later.
     """
-    if not s:
-        return ""
-    depth = 0
-    start = -1
-    for i, ch in enumerate(s):
-        if ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            if depth > 0:
-                depth -= 1
-                if depth == 0 and start != -1:
-                    return s[start : i + 1]
-    return ""
+    header = ""
+    footer = ""
 
+    top = _slice_top(sample, HEADER_MAX_LINES)
+    if _looks_like_header(top):
+        header = top.strip()
 
-def _extract_json_block(text: str) -> str:
+    bot = _slice_bottom(sample, FOOTER_MAX_LINES)
+    if _looks_like_footer(bot):
+        footer = bot.strip()
+
+    return header, footer
+
+def _placeholderize_header(header: str) -> str:
     """
-    Try in order to extract a JSON object as text:
-      1) ```json ... ```
-      2) generic ``` ... ``` (then strip language and find first {...})
-      3) first balanced {...} object from raw text
-
-    Returns '' if nothing found.
+    Convert common metadata fields into placeholders expected by the formatter.
+    e.g., 'Title: Global Tech SOP' -> 'Title: {{title}}'
     """
-    if not text:
-        return ""
-
-    # 1) explicit fenced ```json
-    m = _JSON_FENCE_RE.search(text)
-    if m:
-        return m.group(1).strip()
-
-    # 2) any fenced block
-    fence = re.search(r"```([\s\S]*?)```", text)
-    if fence:
-        inner = fence.group(1).strip()
-        if inner.lower().startswith("json"):
-            inner = inner[4:].strip()
-        cand = _extract_first_braced_object(inner)
-        if cand:
-            return cand.strip()
-
-    # 3) first balanced object from raw text
-    cand = _extract_first_braced_object(text)
-    return cand.strip()
+    h = header
+    # Title
+    h = re.sub(r"(?i)^(title\s*:\s*).*$", r"\1{{title}}", h, flags=re.MULTILINE)
+    # Document ID
+    h = re.sub(r"(?i)^(document\s*id|doc\s*id)\s*:\s*.*$", r"\1: {{document_id}}", h, flags=re.MULTILINE)
+    # Version
+    h = re.sub(r"(?i)^(version)\s*:\s*.*$", r"\1: {{version}}", h, flags=re.MULTILINE)
+    # Effective Date
+    h = re.sub(r"(?i)^(effective\s*date)\s*:\s*.*$", r"\1: {{effective_date}}", h, flags=re.MULTILINE)
+    # Industry
+    h = re.sub(r"(?i)^(industry)\s*:\s*.*$", r"\1: {{industry}}", h, flags=re.MULTILINE)
+    # Audience
+    h = re.sub(r"(?i)^(audience|target\s*audience)\s*:\s*.*$", r"\1: {{target_audience}}", h, flags=re.MULTILINE)
+    return h
 
 
-def _escape_ctrl_in_strings(s: str) -> str:
+def _sanitize_kb_id(raw: Optional[str]) -> Optional[str]:
     """
-    Escape raw control chars inside double-quoted strings to make JSON parseable:
-      \n -> \\n, \r -> \\r, \t -> \\t
-
-    Why:
-      Some LLMs embed literal newlines/tabs within JSON string values. Strict
-      json.loads rejects these; escaping them makes parsing more resilient.
+    Strip whitespace and quotes from the KB ID env var.
+    Allow typical AWS resource ID characters (letters, digits, hyphens).
     """
-    out = []
-    in_str = False
-    esc = False
-    for ch in s:
-        if in_str:
-            if esc:
-                out.append(ch)
-                esc = False
-            else:
-                if ch == "\\":
-                    out.append(ch)
-                    esc = True
-                elif ch == "\"":
-                    out.append(ch)
-                    in_str = False
-                elif ch == "\n":
-                    out.append("\\n")
-                elif ch == "\r":
-                    out.append("\\r")
-                elif ch == "\t":
-                    out.append("\\t")
-                else:
-                    out.append(ch)
-        else:
-            out.append(ch)
-            if ch == "\"":
-                in_str = True
-    return "".join(out)
+    if raw is None:
+        return None
+    cleaned = raw.strip().strip('"').strip("'").strip()
+    if not cleaned:
+        return None
+    import re as _re
+    if not _re.fullmatch(r"[A-Za-z0-9\-]+", cleaned):
+        raise RuntimeError(
+            f"KNOWLEDGE_BASE_ID contains invalid chars: "
+            f"{repr(raw)} → {repr(cleaned)}"
+        )
+    return cleaned
 
 
-def _remove_trailing_commas(s: str) -> str:
-    """
-    Remove trailing commas that may appear in objects/arrays:
-      {"a":1,} -> {"a":1}    [1,2,] -> [1,2]
-    """
-    return _TRAILING_COMMA_RE.sub("", s)
+# KB ID must be set via KNOWLEDGE_BASE_ID environment variable.
+_KB_ID = _sanitize_kb_id(os.getenv("KNOWLEDGE_BASE_ID"))
+
+# ── Retrieval tuning ────────────────────────────────────────────────────────────
+# KB_MAX_RESULTS — how many hits to request per individual query.
+_KB_MAX_RESULTS = int(os.getenv("KB_MAX_RESULTS", "20"))
+
+# KB_MIN_SCORE — relevance threshold; hits below this score are discarded.
+# Default is 0.0 (keep everything) because the KB always has SOP documents
+# and we must never return 0 hits.  Raise only to suppress noise.
+_KB_MIN_SCORE = float(os.getenv("KB_MIN_SCORE", "0.0"))
+
+# RESEARCH_MAX_TOKENS — starting token budget for the synthesis InvokeModel call.
+# The agent doubles this automatically on max_tokens truncation, up to 8192.
+# Default raised to 6000 to handle large KB result sets without truncation.
+# Increase further (e.g. set RESEARCH_MAX_TOKENS=8000) if synthesis still truncates.
+_RESEARCH_MAX_TOKENS = int(os.getenv("RESEARCH_MAX_TOKENS", "6000"))
+
+# RESEARCH_MAX_ATTEMPTS — how many times to retry synthesis on token overflow.
+_RESEARCH_MAX_ATTEMPTS = int(os.getenv("RESEARCH_MAX_ATTEMPTS", "3"))
+
+# RESEARCH_ROUND_TIMEOUT_SEC / RESEARCH_TIMEOUT_SEC
+# Per-round and overall timeout for KB retrieval.
+# Prevents the pipeline hanging when Bedrock KB is slow.
+# Defaults are generous (30s/120s) — tighten if you have strict SLA requirements.
+_RESEARCH_ROUND_TIMEOUT_SEC = float(os.getenv("RESEARCH_ROUND_TIMEOUT_SEC", "30.0"))
+_RESEARCH_TIMEOUT_SEC       = float(os.getenv("RESEARCH_TIMEOUT_SEC", "120.0"))
+
+# RESEARCH_DISABLE_LLM — when "1", skip Claude synthesis and return raw chunks.
+# Useful for debugging retrieval without incurring synthesis cost.
+_RESEARCH_DISABLE_LLM = os.getenv("RESEARCH_DISABLE_LLM", "0") not in ("", "0", "false", "False")
 
 
-def _loads_lenient(text: str) -> dict:
-    """
-    Lenient JSON loader:
-      - Try strict json.loads first.
-      - On failure, escape control characters and remove trailing commas, then try again.
-
-    Raises:
-      json.JSONDecodeError if parsing still fails.
-    """
-    if not text:
-        raise json.JSONDecodeError("empty", "", 0)
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        fixed = _escape_ctrl_in_strings(text)
-        fixed = _remove_trailing_commas(fixed)
-        return json.loads(fixed)
-
-
-# -----------------------------------------------------------------------------
-# LLM (Bedrock) helpers — Option B uses Converse ONLY for text generation
-# -----------------------------------------------------------------------------
 def _get_model_id(env_var: str) -> str:
-    """
-    Resolve model ARN by environment variable (e.g., MODEL_RESEARCH / MODEL_RESEARCH_NODE),
-    falling back to _DEFAULT_MODEL_ID.
-    """
     return os.getenv(env_var, _DEFAULT_MODEL_ID)
 
 
-def _call_bedrock_sync(
+# ── JSON SCHEMA SAFETY HELPER ──────────────────────────────────────────────────
+
+def _is_object_type(t: Union[str, List[str], None]) -> bool:
+    if t is None:
+        return False
+    if isinstance(t, str):
+        return t == "object"
+    if isinstance(t, list):
+        return "object" in t
+    return False
+
+
+def _enforce_no_additional_props(schema: Any) -> None:
+    """
+    Recursively set additionalProperties=False for each JSON Schema node
+    whose type includes "object". Handles arrays and combinators.
+    Mutates the provided dict in-place.
+    """
+    if not isinstance(schema, dict):
+        return
+
+    t = schema.get("type")
+    if _is_object_type(t):
+        if schema.get("additionalProperties", True) is not False:
+            schema["additionalProperties"] = False
+
+        # Recurse into properties
+        props = schema.get("properties", {})
+        if isinstance(props, dict):
+            for v in props.values():
+                _enforce_no_additional_props(v)
+
+        # patternProperties (if any)
+        pat = schema.get("patternProperties", {})
+        if isinstance(pat, dict):
+            for v in pat.values():
+                _enforce_no_additional_props(v)
+
+        # If "items" also exists (object + items is unusual but safe)
+        if "items" in schema:
+            _enforce_no_additional_props(schema["items"])
+
+    # Arrays
+    if t == "array" or (isinstance(t, list) and "array" in t):
+        if "items" in schema:
+            _enforce_no_additional_props(schema["items"])
+
+    # Combinators
+    for key in ("oneOf", "anyOf", "allOf"):
+        if key in schema and isinstance(schema[key], list):
+            for sub in schema[key]:
+                _enforce_no_additional_props(sub)
+
+
+# ── JSON SCHEMA FOR STRUCTURED RESEARCH FINDINGS ──────────────────────────────
+# Note: Avoid dynamic object keys anywhere. Use arrays-of-objects patterns instead.
+_RESEARCH_FINDINGS_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "similar_sops": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "snippet": {"type": "string"},
+                    "source":  {"type": "string"},
+                    "score":   {"type": "number"}
+                },
+                "required": ["snippet", "source"]
+            },
+            "default": []
+        },
+        "compliance_requirements": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": []
+        },
+        "best_practices": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": []
+        },
+        "sources": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": []
+        },
+        # section_insights: array of objects (LLM/JSON-schema friendly)
+        "section_insights": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "section":   {"type": "string"},  # e.g., "1.0", "6.0.2"
+                    "facts":     {"type": "array", "items": {"type": "string"}},
+                    "citations": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["section", "facts"]
+            },
+            "default": []
+        },
+        # Explicitly include kb_format_context so the model can emit it safely
+        "kb_format_context": {
+            "type": ["object", "null"],
+            "additionalProperties": False,
+            "properties": {
+                "section_titles": {
+                    "type": ["array", "null"],
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "number": {"type": "string"},
+                            "title":  {"type": "string"}
+                        },
+                        "required": ["number", "title"]
+                    }
+                },
+                "numbering_style": {"type": ["string", "null"]},
+                "table_sections": {
+                    "type": ["array", "null"],
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "number":  {"type": "string"},
+                            "columns": {"type": "array", "items": {"type": "string"}}
+                        },
+                        "required": ["number", "columns"]
+                    }
+                },
+                "subsection_sections": {"type": ["array", "null"], "items": {"type": "string"}},
+                "prose_sections":      {"type": ["array", "null"], "items": {"type": "string"}},
+                "writing_style":       {"type": ["string", "null"]},
+                "special_elements":    {"type": ["array", "null"], "items": {"type": "string"}},
+                "section_count":       {"type": ["integer", "null"]},
+                "banned_elements":     {"type": ["array", "null"], "items": {"type": "string"}}
+            }
+        }
+    },
+    "required": ["similar_sops", "compliance_requirements", "best_practices", "sources"]
+}
+
+
+# ── ANTHROPIC INVOKEMODEL API HELPERS ─────────────────────────────────────────
+
+def _extract_text_from_invoke_body(body_json: Dict[str, Any]) -> str:
+    """
+    Extract concatenated text from an Anthropic InvokeModel response body.
+
+    Anthropic Messages API response shape:
+      { "content": [ {"type": "text", "text": "..."}, ... ], "stop_reason": "..." }
+    """
+    blocks = body_json.get("content", []) or []
+    texts = [
+        b.get("text", "")
+        for b in blocks
+        if isinstance(b, dict) and b.get("type") == "text"
+    ]
+    return "".join(texts).strip()
+
+
+def _invoke_model_json(
+    client,
     model_id: str,
     system_prompt: str,
     user_prompt: str,
-    *,
-    max_tokens: int = 2048,
-) -> str:
+    schema: Dict[str, Any],
+    initial_max_tokens: int = 4096,
+    max_attempts: int = 3,
+) -> Dict[str, Any]:
     """
-    Synchronously call Bedrock Converse API and extract the returned text.
-
-    Notes:
-      * This is a blocking call (boto3). In async contexts we offload to a thread.
-      * Consider setting temperature=0 for deterministic research output (JSON).
-      * We do not set 'responseFormat' because some models reject it with Converse.
+    Call Bedrock InvokeModel (Anthropic Messages API) with Structured Outputs.
+    Uses output_config.format.type = "json_schema" with a valid schema.
     """
-    logger.debug("=== BEDROCK CALL (Research) ===")
-    logger.debug("Model: %s | Region: %s | max_tokens=%s", model_id, _REGION, max_tokens)
-    logger.debug("System prompt len: %d chars", len(system_prompt))
-    logger.debug("User prompt (first 400 chars):\n%s", (user_prompt or "")[:400])
+    max_tokens = initial_max_tokens
+    last_reason = None
+    last_text = ""
 
-    client = boto3.client("bedrock-runtime", region_name=_REGION)
-    request_body = {
-        "modelId": model_id,
-        "system": [{"text": system_prompt}],
-        "messages": [{"role": "user", "content": [{"text": user_prompt}]}],
-        "inferenceConfig": {"maxTokens": max_tokens, "temperature": 0},
+    # Defensive copy + enforce additionalProperties=false everywhere
+    schema_copy = copy.deepcopy(schema)
+    _enforce_no_additional_props(schema_copy)
+
+    for attempt in range(1, max_attempts + 1):
+        body = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": max_tokens,
+            "temperature": 0.0,
+            "system": system_prompt,
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": user_prompt}]}
+            ],
+            # IMPORTANT: InvokeModel only supports {type, schema} under format
+            "output_config": {
+                "format": {
+                    "type": "json_schema",
+                    "schema": schema_copy,
+                }
+            },
+        }
+
+        logger.debug("InvokeModel attempt %d | max_tokens=%d", attempt, max_tokens)
+
+        resp = client.invoke_model(
+            modelId=model_id,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps(body).encode("utf-8"),
+        )
+
+        raw = resp.get("body")
+        body_json = json.loads(raw.read()) if raw is not None else {}
+        logger.debug("InvokeModel body (first 1000): %s", json.dumps(body_json, default=str)[:1000])
+
+        stop_reason = body_json.get("stop_reason")
+        last_reason = stop_reason
+        text = _extract_text_from_invoke_body(body_json)
+        last_text = text or ""
+
+        if stop_reason == "max_tokens":
+            logger.warning("InvokeModel hit max_tokens; doubling budget (attempt %d/%d)", attempt, max_attempts)
+            max_tokens = min(max_tokens * 2, 8192)
+            continue
+
+        if not text:
+            raise ValueError(f"InvokeModel returned empty content. stop_reason={stop_reason} | body={body_json}")
+
+        return json.loads(text)
+
+    raise RuntimeError(
+        f"InvokeModel exhausted token budget. Last stop_reason={last_reason}. Last text length={len(last_text)}."
+    )
+
+# ── STRING / TEXT HELPERS ─────────────────────────────────────────────────────
+
+def _truncate(s: str, max_len: int) -> str:
+    """Truncate a string for safe logging."""
+    return s if len(s) <= max_len else s[: max_len - 3] + "..."
+
+
+def _tokenize_keywords(text: str) -> List[str]:
+    """
+    Lowercase, tokenise, and remove common stop words from text.
+    Used to build compact keyword-only fallback queries.
+    """
+    tokens = re.findall(r"[a-z0-9]+", (text or "").lower())
+    stop = {
+        "and", "or", "the", "a", "an", "of", "to", "in", "for",
+        "on", "with", "by", "at", "be", "is", "are"
     }
-
-    response = client.converse(**request_body)
-    logger.debug("Raw Bedrock response: %s", json.dumps(response, default=str))
-
-    # Extract the concatenated "text" parts
-    output = response.get("output", {})
-    message = output.get("message", {})
-    content = message.get("content", [])
-    if not content:
-        raise ValueError(f"Bedrock returned empty content. Full response: {response}")
-
-    text_parts = [part.get("text", "") for part in content if "text" in part]
-    text = "\n".join(tp for tp in text_parts if tp).strip()
-    logger.debug("Extracted text (%d chars):\n%s", len(text), text[:800])
-
-    if not text:
-        raise ValueError(f"Bedrock returned blank text. Full response: {response}")
-
-    return text
+    return [t for t in tokens if len(t) > 2 and t not in stop]
 
 
-async def _call_bedrock_async(
-    model_id: str,
-    system_prompt: str,
-    user_prompt: str,
-    *,
-    max_tokens: int = 2048,
-) -> str:
+def _synonymize(words: Iterable[str]) -> List[str]:
     """
-    Async wrapper that offloads the blocking boto3 call to a worker thread, so the
-    event loop remains responsive.
+    Expand keywords with domain synonyms to broaden KB recall.
+    E.g. "qualification" → also try "validation", "assessment".
     """
-    return await asyncio.to_thread(
-        _call_bedrock_sync, model_id, system_prompt, user_prompt, max_tokens=max_tokens
+    syn_map = {
+        "qualification": ["validation", "assessment", "verification"],
+        "network":        ["networking"],
+        "storage":        ["datastore", "repositories"],
+        "cloud":          ["iaas", "paas", "saas"],
+        "procedure":      ["process", "steps", "workflow"],
+        "devices":        ["hardware", "equipment"],
+        "infrastructure": ["systems", "it infrastructure"],
+    }
+    out = set(words)
+    for w in list(words):
+        for k, syns in syn_map.items():
+            if w.startswith(k):
+                out.update(syns)
+    return list(out)
+
+
+# ── QUERY BUILDING ─────────────────────────────────────────────────────────────
+
+def _build_queries(state: SOPState) -> List[str]:
+    """
+    Build Round 1 KB queries: semantically diverse, topic-specific.
+    """
+    topic    = (state.topic or "").strip()
+    industry = (state.industry or "").strip()
+
+    base: List[str] = [
+        f"{topic} {industry}",
+        f"{topic} standard operating procedure",
+        f"{industry} SOP procedure responsibilities scope definitions references",
+        f"{topic} procedure purpose scope responsibilities",
+    ]
+
+    if getattr(state, "outline", None) and getattr(state.outline, "sections", None):
+        titles = [s.title for s in state.outline.sections if s.title][:6]
+        if titles:
+            base.append(f"SOP {', '.join(titles)}")
+            base.append(f"{topic} {' '.join(titles[:3])}")
+
+    keywords = _tokenize_keywords(f"{topic} {industry} sop procedure")
+    keywords = _synonymize(keywords)
+    if keywords:
+        base.append(" ".join(sorted(set(keywords))))
+
+    seen: set = set()
+    queries: List[str] = []
+    for q in base:
+        q = q.strip()
+        if q and q not in seen:
+            seen.add(q)
+            queries.append(q)
+    return queries
+
+
+# ── KB CLIENT + RETRIEVAL ─────────────────────────────────────────────────────
+
+def _kb_client():
+    """Create a Bedrock Agent Runtime client for KB retrieval."""
+    if not _KB_ID:
+        raise RuntimeError(
+            "KNOWLEDGE_BASE_ID is not set. "
+            "Set the KNOWLEDGE_BASE_ID environment variable."
+        )
+    return boto3.client("bedrock-agent-runtime", region_name=_KB_REGION)
+
+
+def _content_hash(text: str) -> str:
+    """SHA-256 hash of chunk content — used to deduplicate retrieval results."""
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+def _merge_hits_dedupe(all_hits: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Deduplicate KB hits by content hash, keeping the highest-scoring copy.
+    Returns hits sorted by score descending.
+    """
+    by_hash: Dict[str, Dict[str, Any]] = {}
+    for h in all_hits:
+        content = (h.get("content") or "").strip()
+        if not content:
+            continue
+        hsh = _content_hash(content)
+        if hsh not in by_hash or float(h.get("score", 0)) > float(by_hash[hsh].get("score", 0)):
+            by_hash[hsh] = h
+    merged = list(by_hash.values())
+    merged.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
+    return merged
+
+
+async def _retrieve_one(query: str, max_results: int) -> List[Dict[str, Any]]:
+    """
+    Execute a single KB retrieval query asynchronously (via asyncio.to_thread).
+    Returns a list of hit dicts: { content, score, source, query }
+    """
+    client = _kb_client()
+    logger.debug(
+        "KB retrieve | id=%s | region=%s | max=%d | query=%.160s",
+        _KB_ID, _KB_REGION, max_results, query
+    )
+
+    resp = await asyncio.to_thread(
+        client.retrieve,
+        knowledgeBaseId=_KB_ID,
+        retrievalQuery={"text": query},
+        retrievalConfiguration={
+            "vectorSearchConfiguration": {"numberOfResults": max_results}
+        },
+    )
+
+    hits: List[Dict[str, Any]] = []
+    for r in resp.get("retrievalResults", []):
+        score = float(r.get("score", 0.0))
+        if score < _KB_MIN_SCORE:
+            continue
+        hits.append({
+            "content": r.get("content", {}).get("text", ""),
+            "score":   score,
+            "source":  r.get("location", {}).get("s3Location", {}).get("uri", "Unknown"),
+            "query":   query,
+        })
+
+    logger.debug("KB retrieve | hits=%d | query=%.80s", len(hits), query)
+    return hits
+
+
+async def _retrieve_multi(
+    queries: List[str],
+    max_results: int
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    """
+    Run multiple KB queries concurrently, merge, and deduplicate results.
+    """
+    per_query_counts: Dict[str, int] = {}
+    tasks = [asyncio.create_task(_retrieve_one(q, max_results)) for q in queries]
+    all_hits: List[Dict[str, Any]] = []
+
+    for task in asyncio.as_completed(tasks):
+        try:
+            hits = await task
+        except Exception as e:
+            logger.warning("KB retrieve error (query skipped): %s", e)
+            hits = []
+        all_hits.extend(hits)
+
+    for h in all_hits:
+        q = h.get("query", "")
+        per_query_counts[q] = per_query_counts.get(q, 0) + 1
+
+    merged = _merge_hits_dedupe(all_hits)
+    return merged, per_query_counts
+
+
+async def _guarantee_kb_hits(
+    state: SOPState,
+) -> Tuple[List[Dict[str, Any]], Dict[str, int], List[str]]:
+    """
+    Guaranteed-hits retrieval: keeps retrying until at least one KB chunk
+    is returned.  Zero hits is NEVER acceptable — the KB always has SOPs.
+    """
+    queries_tried: List[str] = []
+    hits: List[Dict[str, Any]] = []
+    per_query_counts: Dict[str, int] = {}
+
+    # Round 1
+    queries_r1 = _build_queries(state)
+    queries_tried.extend(queries_r1)
+    hits, per_query_counts = await _retrieve_multi(queries_r1, _KB_MAX_RESULTS)
+    if hits:
+        logger.info("KB Round 1: %d hits across %d queries", len(hits), len(queries_r1))
+        return hits, per_query_counts, queries_tried
+
+    logger.warning("KB Round 1 returned 0 hits (%d queries). Trying Round 2...", len(queries_r1))
+
+    # Round 2
+    short_topic = " ".join(_tokenize_keywords(state.topic))[:160]
+    short_ind   = " ".join(_tokenize_keywords(state.industry))[:80]
+    queries_r2 = list({
+        short_topic,
+        f"{short_topic} {short_ind}",
+        f"{state.topic} procedure responsibilities scope",
+        f"{state.industry} {state.topic} SOP",
+        f"{state.industry} {state.topic}",
+    } - set(queries_tried))
+    queries_tried.extend(queries_r2)
+    hits2, per2 = await _retrieve_multi(queries_r2, _KB_MAX_RESULTS)
+    hits = _merge_hits_dedupe([*hits, *hits2])
+    per_query_counts.update(per2)
+    if hits:
+        logger.info("KB Round 2: %d total hits", len(hits))
+        return hits, per_query_counts, queries_tried
+
+    logger.warning("KB Round 2 still 0 hits. Trying Round 3 (universal SOP terms)...")
+
+    # Round 3
+    queries_r3 = [
+        "purpose scope responsibilities procedure references revision history",
+        "standard operating procedure purpose scope",
+        "SOP responsibilities definitions materials procedure",
+        "revision history effective date procedure scope",
+        "SOP document purpose procedure responsibilities",
+        "scope of procedure materials references",
+    ]
+    queries_r3 = [q for q in queries_r3 if q not in queries_tried]
+    queries_tried.extend(queries_r3)
+    hits3, per3 = await _retrieve_multi(queries_r3, _KB_MAX_RESULTS)
+    hits = _merge_hits_dedupe([*hits, *hits3])
+    per_query_counts.update(per3)
+    if hits:
+        logger.info("KB Round 3: %d total hits", len(hits))
+        return hits, per_query_counts, queries_tried
+
+    logger.warning("KB Round 3 still 0 hits. Trying Round 4 (single-word atomic terms)...")
+
+    # Round 4
+    queries_r4 = ["procedure", "scope", "purpose", "responsibilities", "revision"]
+    queries_r4 = [q for q in queries_r4 if q not in queries_tried]
+    queries_tried.extend(queries_r4)
+    hits4, per4 = await _retrieve_multi(queries_r4, _KB_MAX_RESULTS)
+    hits = _merge_hits_dedupe([*hits, *hits4])
+    per_query_counts.update(per4)
+    if hits:
+        logger.info("KB Round 4: %d total hits", len(hits))
+        return hits, per_query_counts, queries_tried
+
+    raise RuntimeError(
+        "KB returned 0 hits after 4 rounds and "
+        f"{len(queries_tried)} queries (including single-word atomic terms). "
+        "This means either:\n"
+        "  1. KNOWLEDGE_BASE_ID is set to a wrong or empty KB.\n"
+        "  2. The AWS credentials lack bedrock:Retrieve permission.\n"
+        "  3. The KB has no documents ingested yet.\n"
+        "Fix the KB configuration before running the pipeline."
     )
 
 
-def _strip_code_fences(text: str) -> str:
+# ── FORMAT FALLBACK HELPERS ───────────────────────────────────────────────────
+
+def _format_context_from_outline(state: SOPState) -> Dict[str, Any]:
     """
-    Remove ```...``` or ```json ... ``` fences if present.
-    (Kept for compatibility with older parsing paths.)
+    Build kb_format_context from the planning outline (preferred) or a
+    canonical 8-section SOP skeleton.
     """
-    if not text:
-        return text
-    t = text.strip()
-    if t.startswith("```"):
-        parts = t.split("```")
-        candidates = [p.strip() for p in parts if "{" in p and "}" in p]
-        if candidates:
-            cleaned = candidates[0]
-            if cleaned.lower().startswith("json"):
-                cleaned = cleaned[4:].strip()
-            return cleaned
-    return t
+    if getattr(state, "outline", None) and getattr(state.outline, "sections", None):
+        titles = [
+            {"number": s.number, "title": s.title}
+            for s in state.outline.sections
+        ]
+        return {
+            "section_titles": titles,
+            "numbering_style": "decimal with one dot (e.g., 1.0, 2.0, 3.0)",
+            "table_sections": [],
+            "subsection_sections": [
+                t["number"] for t in titles
+                if t["title"].upper() in ("PROCEDURE", "RESPONSIBILITIES")
+            ],
+            "prose_sections": [
+                t["number"] for t in titles
+                if t["title"].upper() in (
+                    "PURPOSE", "SCOPE", "DEFINITIONS", "REFERENCES", "REVISION HISTORY"
+                )
+            ],
+            "writing_style": "imperative, concise",
+            "special_elements": [],
+            "section_count": len(titles),
+            "banned_elements": [],
+        }
+
+    default_titles = [
+        {"number": "1.0", "title": "PURPOSE"},
+        {"number": "2.0", "title": "SCOPE"},
+        {"number": "3.0", "title": "RESPONSIBILITIES"},
+        {"number": "4.0", "title": "DEFINITIONS"},
+        {"number": "5.0", "title": "MATERIALS"},
+        {"number": "6.0", "title": "PROCEDURE"},
+        {"number": "7.0", "title": "REFERENCES"},
+        {"number": "8.0", "title": "REVISION HISTORY"},
+    ]
+    return {
+        "section_titles": default_titles,
+        "numbering_style": "decimal with one dot (e.g., 1.0, 2.0, 3.0)",
+        "table_sections": [],
+        "subsection_sections": ["6.0", "3.0"],
+        "prose_sections": ["1.0", "2.0", "4.0", "7.0", "8.0", "5.0"],
+        "writing_style": "imperative, concise",
+        "special_elements": [],
+        "section_count": 8,
+        "banned_elements": [],
+    }
 
 
-def _find_json_objects(text: str) -> List[dict]:
+def _format_only_findings(state: SOPState) -> ResearchFindings:
     """
-    Find JSON objects in free-form text by brace balancing and parse those that are valid dicts.
-
-    Useful when the model returns prose around structured content.
+    Return a ResearchFindings object with empty content lists but a guaranteed
+    kb_format_context derived from the outline or the default 8-section skeleton.
     """
-    objs: List[dict] = []
-    s = text or ""
-    n = len(s)
-    i = 0
-    while i < n:
-        if s[i] == "{":
-            depth = 1
-            j = i + 1
-            while j < n and depth > 0:
-                if s[j] == "{":
-                    depth += 1
-                elif s[j] == "}":
-                    depth -= 1
-                j += 1
-            if depth == 0:
-                candidate = s[i:j]
-                try:
-                    obj = json.loads(candidate)
-                    if isinstance(obj, dict):
-                        objs.append(obj)
-                except Exception:
-                    pass
-                i = j
-                continue
-        i += 1
-    return objs
+    return ResearchFindings(
+        similar_sops=[],
+        compliance_requirements=[],
+        best_practices=[],
+        sources=[],
+        kb_format_context=_format_context_from_outline(state),
+    )
 
 
-def _extract_tool_call_from_text(text: str) -> Optional[Dict[str, Any]]:
-    """
-    Optional Mode: Extract the first object that looks like a function call:
-      {"type":"function","name":"run_research","parameters": {...}}
-
-    Flow:
-      1) Strip code fences
-      2) Try json.loads on the full cleaned string
-      3) Fallback to scanning for embedded dict objects
-    """
-    if not text:
-        return None
-    cleaned = _strip_code_fences(text)
-
-    # Try entire content first
-    try:
-        obj = json.loads(cleaned)
-        if isinstance(obj, dict) and obj.get("type") == "function" and "name" in obj:
-            return obj
-    except Exception:
-        pass
-
-    # Then scan for embedded objects
-    for obj in _find_json_objects(cleaned):
-        if obj.get("type") == "function" and "name" in obj:
-            return obj
-    return None
-
-
-def _extract_workflow_id_from_prompt(prompt: str) -> Optional[str]:
-    """
-    Extract workflow id from messages that follow the convention:
-      "workflow_id::<id> | <rest of message>"
-    """
-    m = re.search(r"workflow_id::([^\s\|]+)", prompt or "")
-    return m.group(1) if m else None
-
-
-def _parse_json_response(text: str) -> dict:
-    """
-    Legacy JSON parser: strip code fences and parse JSON strictly.
-    (Kept as a fallback; newer flow uses _extract_json_block + _loads_lenient.)
-    """
-    t = _strip_code_fences(text)
-    logger.debug("Parsing JSON (%d chars):\n%s", len(t), t[:800])
-    return json.loads(t)
-
-
-# -----------------------------------------------------------------------------
-# Domain helpers (sync by design; offload via asyncio.to_thread in async flows)
-# -----------------------------------------------------------------------------
-def _truncate(s: str, max_len: int) -> str:
-    """
-    Truncate a string to at most max_len characters, adding "..." if needed.
-    Used to limit the size of KB snippets provided to the model.
-    """
-    return s if len(s) <= max_len else (s[: max_len - 3] + "...")
-
-
-def search_knowledge_base(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
-    """
-    Search Bedrock Knowledge Base for semantically similar documents.
-
-    Returns:
-      A list of dicts with keys: {content, score, source}.
-
-    Behavior:
-      - If KNOWLEDGE_BASE_ID isn't set, logs a warning and returns an empty list.
-      - Uses vector search configuration to retrieve top-N results.
-      - Normalizes output across KB record variations.
-
-    Caveats:
-      - Requires appropriate IAM permissions for bedrock-agent-runtime:Retrieve.
-      - Sources are reported from the KB 'location' metadata when available.
-    """
-    results: List[Dict[str, Any]] = []
-    if not _KB_ID:
-        logger.warning("KNOWLEDGE_BASE_ID is not set. Skipping KB retrieval.")
-        return results
-
-    try:
-        kb_client = boto3.client("bedrock-agent-runtime", region_name=_KB_REGION)
-        resp = kb_client.retrieve(
-            knowledgeBaseId=_KB_ID,
-            retrievalQuery={"text": query},
-            retrievalConfiguration={
-                "vectorSearchConfiguration": {"numberOfResults": max_results}
-            },
-        )
-        for r in resp.get("retrievalResults", []):
-            results.append(
-                {
-                    "content": r.get("content", {}).get("text", ""),
-                    "score": r.get("score", 0.0),
-                    "source": (
-                        r.get("location", {})
-                        .get("s3Location", {})
-                        .get("uri", "Unknown")
-                    ),
-                }
-            )
-        return results
-    except Exception as e:
-        logger.error("KB search error: %s", e)
-        return results
-
+# ── DOMAIN HELPERS ────────────────────────────────────────────────────────────
 
 def get_compliance_requirements(industry: str, topic: str) -> List[str]:
     """
-    Return a baseline set of compliance/regulatory requirements for a given industry/topic.
-
-    Note:
-      This is a static placeholder map — suitable for a baseline signal during development.
-      Replace/extend with calls to your actual compliance sources/services as needed.
+    Return a baseline list of compliance requirements for the given industry.
+    Used when KB retrieval yields no compliance-specific chunks.
     """
-    compliance_map = {
-        "Manufacturing": ["OSHA 1910", "ISO 9001"],
-        "Healthcare": ["HIPAA", "FDA 21 CFR"],
-        "Laboratory": ["CLIA", "CAP Standards"],
-        "Energy": ["OSHA PSM 1910.119", "API RP 754"],
+    compliance_map: Dict[str, List[str]] = {
+        "Manufacturing":               ["OSHA 1910", "ISO 9001"],
+        "Healthcare":                  ["HIPAA", "FDA 21 CFR Part 11"],
+        "Laboratory":                  ["CLIA", "CAP Standards"],
+        "Energy":                      ["OSHA PSM 1910.119", "API RP 754"],
+        "Information Technology (IT)": ["ISO/IEC 27001", "NIST SP 800-53", "General Safety"],
     }
     return compliance_map.get(industry, ["General Safety"])
 
 
-# -----------------------------------------------------------------------------
-# Graph-level tool — does the ACTUAL research and writes to STATE_STORE
-# -----------------------------------------------------------------------------
+# ── LLM SYNTHESIS ─────────────────────────────────────────────────────────────
+
+async def _synthesize_findings(
+    state: SOPState,
+    kb_docs: List[Dict[str, Any]]
+) -> ResearchFindings:
+    """
+    Use Claude to synthesise structured ResearchFindings from the raw KB chunks.
+    """
+    kb_context_lines: List[str] = []
+    for i, doc in enumerate(kb_docs[:15]):
+        content = (doc.get("content") or "").strip()
+        if not content:
+            continue
+        score  = float(doc.get("score", 0.0))
+        source = doc.get("source", "Unknown")
+        kb_context_lines.append(
+            f"[{i+1}] score={score:.3f} | source={source}\n"
+            f"  {_truncate(content, 700)}"
+        )
+    kb_context = "\n\n".join(kb_context_lines) or "(no KB results)"
+
+    compliance     = get_compliance_requirements(state.industry, state.topic)
+    compliance_str = ", ".join(compliance)
+    model_id       = _get_model_id("MODEL_RESEARCH")
+
+    user_prompt = (
+        "Analyse the Knowledge Base extracts below and return ONLY a JSON object "
+        "matching the provided schema.\n\n"
+        f"TOPIC:               {state.topic}\n"
+        f"INDUSTRY:            {state.industry}\n"
+        f"TARGET AUDIENCE:     {state.target_audience}\n"
+        f"ADDITIONAL REQs:     {', '.join(state.requirements or [])}\n\n"
+        f"COMPLIANCE BASELINE: {compliance_str}\n\n"
+        f"KNOWLEDGE BASE EXTRACTS:\n{kb_context}\n\n"
+        "PART A — CONTENT EXTRACTION:\n"
+        "1. Populate 'similar_sops' with the most relevant KB snippets, sources, and scores.\n"
+        "2. List actionable 'best_practices' grounded in the KB content.\n"
+        "3. Enumerate 'compliance_requirements' (augment the baseline from KB if possible).\n"
+        "4. Include a flat 'sources' list.\n"
+        "5. For 'section_insights': output an ARRAY where each item is an object "
+        "   with fields {\"section\": \"<e.g., 6.0>\", \"facts\": [\"...\"], "
+        "   \"citations\": [\"...\"]}. Choose section numbers that reflect where "
+        "   each fact belongs.\n\n"
+        "PART B — FORMAT EXTRACTION:\n"
+        "6. Carefully examine the KB extracts and populate 'kb_format_context' with the "
+        "   formatting conventions you observe: exact section titles and numbers, which "
+        "   sections use tables and what columns, which use subsections, which use plain "
+        "   prose, the writing style, and any patterns that are clearly NOT used.\n"
+        "   Set any value to null if you cannot determine it from the extracts.\n"
+        "   This is critical — downstream agents will use kb_format_context to format "
+        "   the new SOP to match your KB, without any hardcoded rules.\n\n"
+        "JSON only. No markdown. No commentary."
+    )
+
+    def _invoke() -> Dict[str, Any]:
+        client = boto3.client("bedrock-runtime", region_name=_REGION)
+        return _invoke_model_json(
+            client=client,
+            model_id=model_id,
+            system_prompt=RESEARCH_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            schema=_RESEARCH_FINDINGS_SCHEMA,
+            initial_max_tokens=_RESEARCH_MAX_TOKENS,
+            max_attempts=_RESEARCH_MAX_ATTEMPTS,
+        )
+
+    data = await asyncio.to_thread(_invoke)
+
+    # Defensive normalization: ensure section_insights is a list of objects
+    si = data.get("section_insights", [])
+    if si is None:
+        data["section_insights"] = []
+    elif isinstance(si, dict):
+        # Legacy dict → list conversion
+        data["section_insights"] = [{"section": str(k), **(v or {})} for k, v in si.items()]
+
+    try:
+        return ResearchFindings(**data)
+    except Exception as e:
+        # Log compact debug hints
+        logger.error(
+            "ResearchFindings validation failed (%s). Raw keys=%s, section_insights_type=%s",
+            e, list(data.keys()), type(data.get("section_insights")).__name__
+        )
+        # Last-resort repair: ensure each item has 'section'
+        fixed_si = []
+        for i, item in enumerate(data.get("section_insights") or []):
+            if isinstance(item, dict):
+                if "section" not in item or not item["section"]:
+                    item = {"section": str(i + 1), **item}
+                fixed_si.append(item)
+        data["section_insights"] = fixed_si
+        return ResearchFindings(**data)
+
+
+async def _extract_kb_format_context_only(
+    kb_docs: List[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    """
+    Dedicated pass to extract kb_format_context when the main synthesis
+    returned it as null.
+    """
+    model_id = _get_model_id("MODEL_RESEARCH")
+
+    kb_context_lines: List[str] = []
+    for i, doc in enumerate(kb_docs[:10]):
+        content = (doc.get("content") or "").strip()
+        if not content:
+            continue
+        kb_context_lines.append(f"[{i+1}] {_truncate(content, 500)}")
+    kb_context = "\n\n".join(kb_context_lines)
+
+    if not kb_context:
+        return None
+
+    format_prompt = (
+        "You are analysing Knowledge Base SOP document chunks to extract their "
+        "formatting conventions. Return ONLY a JSON object with this exact shape:\n\n"
+        "{\n"
+        '  "section_titles": [{"number": "<e.g. 1.0>", "title": "<exact title>"}],\n'
+        '  "numbering_style": "<description of numbering pattern>",\n'
+        '  "table_sections": [{"number": "<e.g. 3.0>", "columns": ["<col1>", "<col2>"]}],\n'
+        '  "subsection_sections": ["<section numbers that use numbered subsections>"],\n'
+        '  "prose_sections": ["<section numbers that use plain paragraphs>"],\n'
+        '  "writing_style": "<formal/imperative/passive/etc.>",\n'
+        '  "special_elements": ["<any recurring structural element>"],\n'
+        '  "section_count": 0,\n'
+        '  "banned_elements": ["<patterns clearly NOT used in these documents>"]\n'
+        "}\n\n"
+        "Set a value to null only if you truly cannot determine it.\n"
+        "Do NOT invent conventions — only report what you observe in the text.\n\n"
+        f"KB CHUNKS:\n{kb_context}\n\n"
+        "JSON only. No markdown. No code fences."
+    )
+
+    _FORMAT_ONLY_SCHEMA: Dict[str, Any] = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "section_titles": {
+                "type": ["array", "null"],
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "number": {"type": "string"},
+                        "title":  {"type": "string"}
+                    },
+                    "required": ["number", "title"]
+                }
+            },
+            "numbering_style":     {"type": ["string", "null"]},
+            "table_sections": {
+                "type": ["array", "null"],
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "number":  {"type": "string"},
+                        "columns": {"type": "array", "items": {"type": "string"}}
+                    },
+                    "required": ["number", "columns"]
+                }
+            },
+            "subsection_sections": {"type": ["array", "null"], "items": {"type": "string"}},
+            "prose_sections":      {"type": ["array", "null"], "items": {"type": "string"}},
+            "writing_style":       {"type": ["string", "null"]},
+            "special_elements":    {"type": ["array", "null"], "items": {"type": "string"}},
+            "section_count":       {"type": ["integer", "null"]},
+            "banned_elements":     {"type": ["array", "null"], "items": {"type": "string"}},
+        },
+    }
+
+    # Harden: ensure no object allows additionalProperties=true
+    _enforce_no_additional_props(_FORMAT_ONLY_SCHEMA)
+
+    def _invoke() -> Dict[str, Any]:
+        client = boto3.client("bedrock-runtime", region_name=_REGION)
+        return _invoke_model_json(
+            client=client,
+            model_id=model_id,
+            system_prompt=(
+                "You extract SOP formatting conventions from document chunks. "
+                "Return ONLY valid JSON — no markdown, no commentary."
+            ),
+            user_prompt=format_prompt,
+            schema=_FORMAT_ONLY_SCHEMA,
+            initial_max_tokens=2048,
+            max_attempts=2,
+        )
+
+    try:
+        return await asyncio.to_thread(_invoke)
+    except Exception as e:
+        logger.warning("kb_format_context fallback extraction failed: %s", e)
+        return None
+
+
+# ── STRANDS TOOL ──────────────────────────────────────────────────────────────
+
 @tool
 async def run_research(prompt: str) -> str:
     """
     Execute the SOP research step.
 
-    Reads the SOPState identified by the workflow_id embedded in the prompt,
-    conducts research using Bedrock Knowledge Base and a compliance helper,
-    synthesizes best practices via LLaMA (expects JSON-only), saves findings to STATE_STORE,
-    and returns a summary string for the next graph node.
-
-    Args:
-      prompt:
-        Graph message string containing 'workflow_id::<id>'.
-
     Flow:
-      1) Extract workflow_id and fetch SOPState from STATE_STORE; fail fast if missing.
-      2) Build a KB query (optionally hinting with outline section titles if available).
-      3) Retrieve KB docs (RAG) and baseline compliance requirements (client-side).
-      4) Construct system+user prompts and call Bedrock with a small retry loop.
-      5) Extract a JSON object robustly and parse it leniently into ResearchFindings.
-      6) Persist findings into state; set status to RESEARCHED; update current_node/tokens.
-      7) Return a compact status line including summary counts.
-
-    Returns:
-      A compact status message used by the next graph node.
+        1. Extract workflow_id from the graph message.
+        2. Read SOPState from STATE_STORE.
+        3. Run _guarantee_kb_hits (4 rounds; never exits with 0 hits).
+        4. Synthesise findings with Claude.
+        5. If kb_format_context is null → run _extract_kb_format_context_only.
+        6. Write findings + kb_format_context to SOPState.
+        7. Return summary string for the next node.
     """
-    logger.info(">>> run_research called | prompt: %s", (prompt or "")[:160])
+    logger.info(">>> run_research | prompt: %.160s", (prompt or ""))
 
-    # 1) Identify the workflow/run
-    workflow_id = _extract_workflow_id_from_prompt(prompt or "") or ""
-    logger.debug("Extracted workflow_id: '%s'", workflow_id)
-
+    m = re.search(r"workflow_id::([^\s\|]+)", prompt or "")
+    workflow_id = m.group(1) if m else ""
     if not workflow_id:
-        # Fail fast catches graph wiring mistakes early
         raise ValueError(
-            "Missing workflow_id in prompt; expected 'workflow_id::<id>' within the message content."
+            "Missing workflow_id in prompt. "
+            "Expected 'workflow_id::<id>' in the message."
         )
 
-    # Retrieve current state
     state: SOPState = STATE_STORE.get(workflow_id)
     if state is None:
         msg = (
-            f"ERROR: no state found for workflow_id='{workflow_id}' | "
-            f"store keys: {list(STATE_STORE.keys())}"
+            f"ERROR: no state found for workflow_id='{workflow_id}' "
+            f"| store keys: {list(STATE_STORE.keys())}"
         )
         logger.error(msg)
         return msg
 
-    logger.info("State found | topic='%s' industry='%s'", state.topic, state.industry)
+    state.research_complete = False
+
+    logger.info(
+        "Research | topic='%s' industry='%s' audience='%s'",
+        state.topic, state.industry, state.target_audience
+    )
 
     try:
-        # 2) Build KB query (optionally use the first few outline section titles as hints)
-        outline_hint = ""
-        if getattr(state, "outline", None) and getattr(state.outline, "sections", None):
-            first_titles = [s.title for s in (state.outline.sections or [])][:5]
-            outline_hint = f"Outline sections hint: {', '.join(first_titles)}"
-
-        kb_query = f"{state.topic} in {state.industry}. {outline_hint}".strip()
-
-        # Offload blocking KB retrieval to a worker thread to keep event loop responsive
-        kb_docs: List[Dict[str, Any]] = await asyncio.to_thread(
-            search_knowledge_base, kb_query, 5
-        )
-
-        # 3) Gather baseline compliance set
-        compliance = get_compliance_requirements(state.industry, state.topic)
-
-        # Compose KB context (trim content to avoid passing huge text to the LLM)
-        kb_context_lines = []
-        for i, doc in enumerate(kb_docs):
-            content = _truncate(doc.get("content", ""), 700)
-            score = doc.get("score", 0.0)
-            source = doc.get("source", "Unknown")
-            kb_context_lines.append(
-                f"- [{i+1}] score={score:.3f} source={source}\n  {content}"
+        if not _KB_ID:
+            raise RuntimeError(
+                "KNOWLEDGE_BASE_ID environment variable is not set. "
+                "Set it to your Bedrock Knowledge Base ID before running."
             )
-        kb_context = "\n".join(kb_context_lines)
-        compliance_str = ", ".join(compliance)
 
-        # 4) Prepare prompts for the LLM to synthesize JSON findings
-        system_prompt = RESEARCH_SYSTEM_PROMPT
-        user_prompt = (
-            f"RESEARCH TASK:\n"
-            f"- Topic: {state.topic}\n"
-            f"- Industry: {state.industry}\n"
-            f"- Target audience: {state.target_audience}\n"
-            f"- Additional requirements: {', '.join(state.requirements or [])}\n\n"
-            f"COMPLIANCE (baseline): {compliance_str}\n\n"
-            f"KNOWLEDGE BASE EXTRACTS:\n{kb_context or '(no KB results)'}\n"
-        )
+        # Step 1: Guaranteed KB retrieval
+        try:
+            kb_docs, per_query_counts, queries_tried = await _guarantee_kb_hits(state)
+        except RuntimeError as kb_err:
+            logger.error(
+                "KB returned 0 hits after all rounds: %s. "
+                "Falling back to format-only findings.",
+                kb_err,
+            )
+            findings = _format_only_findings(state)
+            state.research          = findings
+            state.kb_format_context = findings.kb_format_context
+            state.kb_hits           = 0
+            state.status            = WorkflowStatus.RESEARCHED
+            state.current_node      = "research"
+            state.research_complete = True
+            state.increment_tokens(250)
+            STATE_STORE[workflow_id] = state
+            return (
+                f"workflow_id::{workflow_id} | "
+                f"Research complete (format-only fallback): kb_hits=0, "
+                f"format_context=yes"
+            )
 
-        # Bedrock call with simple retry loop for resiliency
-        model_id = _get_model_id("MODEL_RESEARCH")
-        last_err: Optional[Exception] = None
-        for attempt in range(1, 4):
-            try:
-                raw_text = await _call_bedrock_async(
-                    model_id, system_prompt, user_prompt, max_tokens=2048
-                )
-                break
-            except Exception as e:
-                last_err = e
-                logger.warning("Bedrock call failed (attempt %d/3): %s", attempt, e)
-                if attempt < 3:
-                    await asyncio.sleep(0.75 * attempt)
-        else:
-            # All attempts exhausted
-            raise last_err or RuntimeError("Unknown Bedrock error during research")
-
-        # 5) Robust JSON extraction + lenient parsing
-        json_str = _extract_json_block(raw_text) or _strip_code_fences(raw_text)
-        findings_data = _loads_lenient(json_str)
-
-        # Validate against your domain dataclass (raises if shape/fields mismatch)
-        findings = ResearchFindings(**findings_data)
-
-        # 6) Persist to state and advance workflow
-        state.research = findings
-        state.status = WorkflowStatus.RESEARCHED
-        state.current_node = "research"
-
-        # Optional: rough token accounting by node (adjust to your telemetry)
-        if hasattr(state, "increment_tokens"):
-            state.increment_tokens(2000)
+        state.kb_hits = len(kb_docs)
 
         logger.info(
-            "Research complete — similar_sops=%d | compliance=%d | workflow_id=%s",
-            len(findings.similar_sops or []),
-            len(findings.compliance_requirements or []),
-            workflow_id,
+            "KB retrieval done — hits=%d | queries_tried=%d",
+            state.kb_hits, len(queries_tried)
+        )
+        for q in queries_tried[:10]:
+            logger.debug("  query='%.110s' → %d hits", q, per_query_counts.get(q, 0))
+
+        # Step 2: Compliance baseline
+        compliance = get_compliance_requirements(state.industry, state.topic)
+
+        # Step 3: LLM synthesis or raw-chunk mode
+        if _RESEARCH_DISABLE_LLM:
+            logger.info("RESEARCH_DISABLE_LLM=1 — skipping Claude synthesis")
+            findings = ResearchFindings(
+                similar_sops=[
+                    {
+                        "snippet": (d.get("content") or "")[:600],
+                        "source":  d.get("source", ""),
+                        "score":   d.get("score", 0.0),
+                    }
+                    for d in kb_docs
+                ],
+                compliance_requirements=compliance,
+                best_practices=[],
+                sources=[d.get("source", "") for d in kb_docs],
+                section_insights=[],
+                kb_format_context=None,
+            )
+        else:
+            findings = await _synthesize_findings(state, kb_docs)
+
+        # Step 4: Guarantee kb_format_context is populated
+        if findings.kb_format_context:
+            logger.info(
+                "kb_format_context extracted in main synthesis | "
+                "sections=%d | style=%s",
+                len(findings.kb_format_context.get("section_titles") or []),
+                findings.kb_format_context.get("writing_style", "unknown"),
+            )
+        else:
+            logger.warning(
+                "kb_format_context was null after main synthesis. "
+                "Running dedicated format-extraction pass..."
+            )
+            fmt_ctx = await _extract_kb_format_context_only(kb_docs)
+            if fmt_ctx:
+                findings = findings.model_copy(update={"kb_format_context": fmt_ctx})
+                logger.info(
+                    "kb_format_context populated via fallback extraction | "
+                    "sections=%d",
+                    len(fmt_ctx.get("section_titles") or []),
+                )
+            else:
+                logger.error(
+                    "CRITICAL: kb_format_context could not be extracted from %d "
+                    "KB chunks.  Downstream agents will use generic SOP defaults. "
+                    "Check that KB documents contain readable SOP text.",
+                    len(kb_docs),
+                )
+
+        # Step 5: Write to shared state
+        state.research          = findings
+        state.status            = WorkflowStatus.RESEARCHED
+        state.current_node      = "research"
+
+        # --- ADD: after kb_format_context is set, before marking research complete ---
+
+        # 1) Build a small “representative” sample from a couple of the most similar KB docs
+        #    (Adjust this to your data shape; below assumes plain text strings are available)
+        samples: list[str] = []
+        try:
+            # Prefer fulltext from your KB retrieval results if you have it
+            # Example shape: state.research.similar_sops: List[{"text": "...", "source": "..."}]
+            if state.research and getattr(state.research, "similar_sops", None):
+                for item in state.research.similar_sops[:3]:  # take up to 3
+                    text = (item.get("text") or item.get("content") or "").strip()
+                    if text:
+                        samples.append(text)
+        except Exception:
+            pass
+
+        # As a fallback, build from section_insights (facts) to get a minimal doc-like string
+        if not samples and state.research and getattr(state.research, "section_insights", None):
+            facts_str = []
+            for si in state.research.section_insights[:6]:
+                for f in si.facts[:3]:
+                    facts_str.append(f)
+            # Put a simple faux header/footer anchor to help heuristics if needed
+            approx = "Title: {{title}}\nDocument ID: {{document_id}}\nVersion: 1.0\nEffective Date: 01-Jan-2026\n\n" + \
+                    "\n".join(facts_str) + \
+                    "\n\nConfidential — For internal use only"
+            samples.append(approx)
+
+        # 2) Derive header/footer from the best available sample(s)
+        derived_header = ""
+        derived_footer = ""
+        for s in samples:
+            h, f = _derive_template_from_text(s)
+            if h and not derived_header:
+                derived_header = _placeholderize_header(h)
+            if f and not derived_footer:
+                derived_footer = f
+            if derived_header and derived_footer:
+                break
+
+        # 3) Assign to state; keep empty string if not found (formatter will still work)
+        state.kb_header_template = (derived_header or state.kb_header_template or "").strip()
+        state.kb_footer_template = (derived_footer or state.kb_footer_template or "").strip()
+
+        # 4) (Optional) Nudge kb_format_context with explicit enforcement flags
+        kfc = state.kb_format_context or {}
+        kfc.setdefault("enforce_header_footer", True)
+        state.kb_format_context = kfc
+
+        state.research_complete = True
+        state.increment_tokens(2000)
+
+        if findings.kb_format_context:
+            state.kb_format_context = findings.kb_format_context
+
+        STATE_STORE[workflow_id] = state
+
+        logger.info(
+            "Research complete | workflow_id=%s | kb_hits=%d | "
+            "similar_sops=%d | compliance=%d | has_format_ctx=%s",
+            workflow_id, state.kb_hits,
+            len(findings.similar_sops),
+            len(findings.compliance_requirements),
+            state.kb_format_context is not None,
         )
 
-        # 7) Compact summary for chaining to the next graph node
         return (
             f"workflow_id::{workflow_id} | "
-            f"Research complete: {len(findings.similar_sops or [])} similar SOPs, "
-            f"{len(findings.compliance_requirements or [])} compliance requirements"
+            f"Research complete: kb_hits={state.kb_hits}, "
+            f"{len(findings.similar_sops)} similar SOPs, "
+            f"{len(findings.compliance_requirements)} compliance requirements, "
+            f"format_context={'yes' if state.kb_format_context else 'no'}"
         )
 
     except Exception as e:
-        # Defensive failure path: mark the run as FAILED and store details on state
         logger.exception("Research FAILED for workflow_id=%s", workflow_id)
-        if hasattr(state, "add_error"):
-            state.add_error(f"Research failed: {str(e)}")
-        state.status = WorkflowStatus.FAILED
+        state.add_error(f"Research failed: {str(e)}")
+        state.status            = WorkflowStatus.FAILED
+        state.research_complete = False
+        STATE_STORE[workflow_id] = state
         return f"workflow_id::{workflow_id} | Research FAILED: {e}"
 
 
-# -----------------------------------------------------------------------------
-# Node entry point for Graph (client-side execution) — ASYNC WRAPPER
-# -----------------------------------------------------------------------------
-async def run_research_node(
-    prompt: str,
-    *,
-    use_llama_dispatch: bool = False,
-) -> str:
-    """
-    Entry point for the RESEARCH node under Option B. (ASYNC)
-
-    Modes:
-      - Default (use_llama_dispatch=False):
-          Directly execute the local tool `run_research(prompt=...)`.
-          This avoids an extra LLM hop and is deterministic.
-
-      - Optional (use_llama_dispatch=True):
-          Ask the model to output ONLY a single function-call JSON:
-            {"type":"function","name":"run_research","parameters":{"prompt":"<string>"}}
-          Parse locally, validate the function name and required parameters,
-          then dispatch to the local tool. Still 100% client-side execution.
-
-    Returns:
-      The tool result string to pass to the next node.
-    """
-    logger.info(">>> run_research_node | use_llama_dispatch=%s", use_llama_dispatch)
-
-    if not use_llama_dispatch:
-        # Recommended path: direct local tool execution
-        return await run_research(prompt=prompt)
-
-    # --- Optional: LLaMA-driven function-call string, parsed client-side ---
-    model_id = _get_model_id("MODEL_RESEARCH_NODE")
-    system_prompt = (
-        "You are the research node in an SOP generation pipeline.\n"
-        "Return ONLY a single JSON object with this exact shape:\n"
-        '{"type":"function","name":"run_research","parameters":{"prompt":"<string>"}}\n'
-        "Do NOT include any surrounding text, markdown, code fences, or commentary."
-    )
-    user_prompt = prompt
-
-    raw = await _call_bedrock_async(model_id, system_prompt, user_prompt, max_tokens=256)
-    tool_call = _extract_tool_call_from_text(raw)
-    if not tool_call:
-        raise RuntimeError(
-            "Model did not return a parseable tool call JSON. "
-            f"Got: {raw[:500]}..."
-        )
-
-    # Safety: ensure the model is not attempting to call an unexpected function
-    if tool_call.get("name") != "run_research":
-        raise RuntimeError(
-            f"Model requested tool '{tool_call.get('name')}', expected 'run_research'."
-        )
-
-    params = tool_call.get("parameters") or {}
-    if "prompt" not in params:
-        raise RuntimeError("Tool call missing required 'parameters.prompt'.")
-
-    # Dispatch to the local async tool
-    return await run_research(**params)
-
-
-# -----------------------------------------------------------------------------
-# NOTE:
-# We intentionally do NOT export a `research_agent = Agent(...)` here.
-# Under Option B, your graph should wrap `run_research_node` with LocalNodeAgent:
-#
-#   research_node = LocalNodeAgent("research", lambda p: run_research_node(p, use_llama_dispatch=False))
-#   gb.add_node(research_node, "research")
-#
-# This keeps all tool execution on the client side while retaining a clean node interface.
-# -----------------------------------------------------------------------------
+# ── NODE AGENT ────────────────────────────────────────────────────────────────
+# Registered with GraphBuilder.add_node("research", research_agent).
+# Forwards the graph message to run_research @tool immediately.
+research_agent = Agent(
+    name="ResearchNode",
+    model=BedrockModel(model_id=_get_model_id("MODEL_RESEARCH")),
+    system_prompt=(
+        "You are the research node in an SOP generation pipeline. "
+        "When you receive a message, IMMEDIATELY call the run_research tool "
+        "with the full message as the prompt argument. "
+        "Do not add commentary — just call the tool and return its result."
+    ),
+    tools=[run_research],
+)
