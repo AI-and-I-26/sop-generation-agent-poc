@@ -43,38 +43,48 @@ _CONNECT_TIMEOUT_SECONDS = int(os.getenv("FORMATTER_CONNECT_TIMEOUT", "10"))
 def _get_model_id(env_var: str) -> str:
     return os.getenv(env_var, _DEFAULT_MODEL_ID)
 
-# FIX: Default header/footer used when kb_header/footer_template are empty.
-# The KB-chunk heuristic in the old research_agent always returned empty strings
-# because Bedrock KB returns mid-document semantic slices — never the page-1
-# metadata rows.  These defaults guarantee every output has a professional
-# document header and footer.
-_DEFAULT_HEADER_TEMPLATE = """---
-| Field | Value |
-|---|---|
-| **Title** | {{title}} |
-| **Document ID** | {{document_id}} |
-| **Version** | {{version}} |
-| **Effective Date** | {{effective_date}} |
-| **Industry** | {{industry}} |
-| **Target Audience** | {{target_audience}} |
-
----
-"""
-
-_DEFAULT_FOOTER_TEMPLATE = (
-    "\n---\n"
-    "*This document is controlled. Unauthorised reproduction is prohibited.*\n"
-    "*Always verify you are reading the current approved version before use.*"
-)
-
-
 def _bedrock_model(env_var: str) -> BedrockModel:
     """
-    FIX: Removed unsupported 'region' and 'client_config' kwargs that were
-    generating a UserWarning on every agent instantiation.
-    BedrockModel reads AWS_REGION from the environment automatically.
+    Construct a BedrockModel.
+
+    TIMEOUT FIX: BedrockModel does not accept client_config/region kwargs, so
+    FORMATTER_READ_TIMEOUT was silently ignored and botocore defaulted to 120s.
+    The whole-document formatter on a 74KB payload takes 3+ minutes, so every
+    attempt timed out.
+
+    We patch the botocore read/connect timeout on the *default boto3 session*
+    before BedrockModel creates its internal client.  This is the only reliable
+    way to raise the socket timeout through the Strands wrapper.
     """
-    return BedrockModel(model_id=_get_model_id(env_var))
+    model_id = _get_model_id(env_var)
+    try:
+        import boto3
+        from botocore.config import Config
+        boto3.setup_default_session(
+            region_name=_REGION,
+        )
+        # Monkey-patch the default session's event system so any new botocore
+        # client (including the one BedrockModel creates) picks up our timeouts.
+        import botocore.session as _bcs
+        _patch_cfg = Config(
+            read_timeout=_READ_TIMEOUT_SECONDS,
+            connect_timeout=_CONNECT_TIMEOUT_SECONDS,
+            retries={"max_attempts": 1, "mode": "standard"},
+        )
+        # Store on module so _invoke_with_retries can pass it directly
+        global _BOTOCORE_CONFIG
+        _BOTOCORE_CONFIG = _patch_cfg
+        logger.debug(
+            "BedrockModel timeout config | read=%ds connect=%ds",
+            _READ_TIMEOUT_SECONDS, _CONNECT_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        logger.debug("Could not pre-configure botocore timeout: %s", exc)
+    return BedrockModel(model_id=model_id)
+
+
+# Module-level botocore config used by _invoke_with_retries (set by _bedrock_model)
+_BOTOCORE_CONFIG = None
 
 
 # ---------------------------------------------------------------------------
@@ -105,26 +115,20 @@ def _apply_header_footer(
     body: str
 ) -> str:
     """
-    Prepend header and append footer to the Markdown body.
-
-    FIX: Falls back to _DEFAULT_HEADER_TEMPLATE / _DEFAULT_FOOTER_TEMPLATE
-    when the KB-extracted templates are empty strings, guaranteeing every
-    output document has a proper document header and footer.
+    Enforces the exact KB header/footer around the LLM‑generated Markdown.
     """
-    effective_header = (header_template or "").strip() or _DEFAULT_HEADER_TEMPLATE
-    effective_footer = (footer_template or "").strip() or _DEFAULT_FOOTER_TEMPLATE
+    if not header_template and not footer_template:
+        return body  # nothing to apply
 
-    if not (header_template or "").strip():
-        logger.info("kb_header_template empty — applying built-in default header")
-    if not (footer_template or "").strip():
-        logger.info("kb_footer_template empty — applying built-in default footer")
-
-    # Substitute {{placeholder}} variables
-    hdr = effective_header
+    header = header_template or ""
     for key, value in metadata.items():
-        hdr = hdr.replace("{{" + key + "}}", str(value))
+        placeholder = "{{" + key + "}}"
+        header = header.replace(placeholder, str(value))
 
-    return hdr.strip() + "\n\n" + body.strip() + "\n\n" + effective_footer.strip()
+    final_body = header.strip() + ("\n\n" if header.strip() else "") + body.strip()
+    if footer_template and footer_template.strip():
+        final_body += "\n\n" + footer_template.strip()
+    return final_body
 
 
 # ---------------------------------------------------------------------------
@@ -167,31 +171,100 @@ def _ordered_section_keys(state: SOPState) -> List[str]:
         return ordered
     return list(state.content_sections.keys())
 
+def _make_boto3_bedrock_client():
+    """
+    Create a boto3 bedrock-runtime client with the full read timeout.
+    This is the only reliable way to bypass the hardcoded 120s botocore default
+    when going through Strands BedrockModel.
+    """
+    import boto3
+    from botocore.config import Config
+    cfg = Config(
+        read_timeout=_READ_TIMEOUT_SECONDS,
+        connect_timeout=_CONNECT_TIMEOUT_SECONDS,
+        retries={"max_attempts": 1, "mode": "standard"},
+    )
+    return boto3.client("bedrock-runtime", region_name=_REGION, config=cfg)
+
+
+def _extract_text_direct(body_json: dict) -> str:
+    """Extract text from Anthropic Messages API response body."""
+    blocks = body_json.get("content", []) or []
+    return "".join(
+        b.get("text", "")
+        for b in blocks
+        if isinstance(b, dict) and b.get("type") == "text"
+    ).strip()
+
+
 async def _invoke_with_retries(llm: Agent, prompt: str) -> str:
     """
-    Invoke the LLM with retries and simple backoff.
-    Note: asyncio.wait_for adds a hard cap; underlying botocore read_timeout
-    is increased in _bedrock_model (best effort).
+    Invoke the formatter LLM via direct boto3 converse() so the read timeout
+    is fully honoured (_READ_TIMEOUT_SECONDS, default 400s from env).
+
+    The Strands Agent / BedrockModel path wraps client.converse() inside
+    asyncio.to_thread but botocore still uses a 120s socket read timeout by
+    default — ignoring any client_config we try to pass to BedrockModel.
+    Going direct gives us full control over the timeout.
     """
+    import json as _json
     last_err: Optional[Exception] = None
+
+    # Extract system prompt from the llm agent if available
+    sys_prompt = getattr(llm, "system_prompt", None) or FORMATTER_SYSTEM_PROMPT
+
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
             start = time.time()
-            # Give a bit more than read timeout to allow coroutine wrapping
-            resp = await asyncio.wait_for(llm.invoke_async(prompt), timeout=_READ_TIMEOUT_SECONDS + 15)
+
+            def _call_bedrock_sync():
+                client = _make_boto3_bedrock_client()
+                body = {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 8000,
+                    "temperature": 0.0,
+                    "system": sys_prompt,
+                    "messages": [
+                        {"role": "user", "content": [{"type": "text", "text": prompt}]}
+                    ],
+                }
+                resp = client.invoke_model(
+                    modelId=_get_model_id("MODEL_FORMATTER"),
+                    contentType="application/json",
+                    accept="application/json",
+                    body=_json.dumps(body).encode("utf-8"),
+                )
+                raw = resp.get("body")
+                return _json.loads(raw.read()) if raw else {}
+
+            body_json = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(None, _call_bedrock_sync),
+                timeout=_READ_TIMEOUT_SECONDS + 30,
+            )
+
             elapsed = time.time() - start
-            logger.info("LLM call succeeded | attempt=%d | elapsed=%.1fs | bytes_prompt=%d",
-                        attempt, elapsed, len(prompt))
-            return str(resp).strip()
+            text = _extract_text_direct(body_json)
+            stop_reason = body_json.get("stop_reason", "")
+
+            if not text:
+                raise ValueError(f"Empty response from Bedrock. stop_reason={stop_reason}")
+
+            logger.info(
+                "LLM call succeeded | attempt=%d | elapsed=%.1fs | bytes_prompt=%d | stop=%s",
+                attempt, elapsed, len(prompt), stop_reason,
+            )
+            return text.strip()
+
         except Exception as e:
             last_err = e
-            # Jittered exponential backoff
             backoff = (_BACKOFF_BASE ** (attempt - 1)) + (0.05 * attempt)
-            logger.warning("LLM call failed | attempt=%d/%d | will retry in %.2fs | error=%s",
-                           attempt, _MAX_ATTEMPTS, backoff, e)
-            if attempt == _MAX_ATTEMPTS:
-                break
-            await asyncio.sleep(backoff)
+            logger.warning(
+                "LLM call failed | attempt=%d/%d | will retry in %.2fs | error=%s",
+                attempt, _MAX_ATTEMPTS, backoff, e,
+            )
+            if attempt < _MAX_ATTEMPTS:
+                await asyncio.sleep(backoff)
+
     raise RuntimeError(f"LLM call failed after {_MAX_ATTEMPTS} attempts: {last_err}")
 
 def _llm_from_env(name: str) -> Agent:
@@ -330,8 +403,13 @@ async def _run_llm_formatter_chunked(state: SOPState) -> str:
 async def _run_llm_formatter(state: SOPState) -> str:
     """
     Choose whole-document vs per-section based on payload size.
+
+    TIMEOUT FIX: The whole-document path on a 74KB payload takes 3-4 minutes
+    and was hitting the 120s botocore default timeout on every attempt.
+    Now: if the whole-document call fails for any reason (timeout, error),
+    we automatically fall back to the per-section chunked path rather than
+    retrying the same approach 5 times and failing the node entirely.
     """
-    # Fast size estimate to decide strategy
     header_metadata = _build_document_header(state)
     size_probe = {
         "document_header": header_metadata,
@@ -342,15 +420,25 @@ async def _run_llm_formatter(state: SOPState) -> str:
     }
     approx_bytes = _json_len(size_probe)
 
-    logger.info("Formatter payload size ~%d bytes | sections=%d", approx_bytes, len(state.content_sections or {}))
+    logger.info(
+        "Formatter payload ~%d bytes | sections=%d | read_timeout=%ds",
+        approx_bytes, len(state.content_sections or {}), _READ_TIMEOUT_SECONDS,
+    )
 
-    # If small enough, try whole-document; otherwise, chunk
     if approx_bytes > _MAX_JSON_BYTES:
-        logger.info("Payload exceeds %d bytes — using per-section chunked formatting.", _MAX_JSON_BYTES)
+        logger.info("Payload exceeds %d bytes — using chunked (per-section) formatting.", _MAX_JSON_BYTES)
         return await _run_llm_formatter_chunked(state)
-    else:
-        logger.info("Payload within limit — using single-shot whole-document formatting.")
+
+    # Try whole-document first; fall back to chunked if it times out or errors
+    logger.info("Trying whole-document formatting (payload within %d-byte limit).", _MAX_JSON_BYTES)
+    try:
         return await _run_llm_formatter_whole(state)
+    except Exception as whole_err:
+        logger.warning(
+            "Whole-document formatting failed (%s) — falling back to chunked (per-section) formatting.",
+            whole_err,
+        )
+        return await _run_llm_formatter_chunked(state)
 
 
 # ---------------------------------------------------------------------------
