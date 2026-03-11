@@ -201,16 +201,9 @@ async def _run_llm_formatter_whole(state: SOPState) -> str:
         "kb_footer_template": state.kb_footer_template or "",
     }
 
-    banned = (state.kb_format_context or {}).get("banned_elements") or []
-    banned_note = (
-        f"BANNED ELEMENTS (must NOT appear anywhere in output): {json.dumps(banned)}\n"
-        if banned else ""
-    )
-
     user_prompt = (
-        f"{banned_note}"
-        "Convert the following SOP JSON payload into formatted text "
-        "following your system prompt rules. Apply banned_elements FIRST.\n\n"
+        "Convert the following SOP JSON payload into KB-format Markdown "
+        "following your system prompt rules exactly.\n\n"
         f"{json.dumps(payload, indent=2, ensure_ascii=False)}\n\n"
         'Return ONLY a JSON object: {"formatted_markdown": "..."}'
     )
@@ -252,22 +245,14 @@ async def _format_one_section(
     """
     Formats a single section. Returns (section_key, formatted_markdown).
     """
-    # Extract banned_elements to surface prominently in the prompt
-    banned = kb_format_context.get("banned_elements") or []
-    banned_note = (
-        f"BANNED ELEMENTS (must NOT appear in output): {json.dumps(banned)}\n"
-        if banned else ""
-    )
-
+    # Keep prompt minimal: only the section, plus style hints
     payload = {
         "section_key": section_key,
         "section": section_payload,
         "kb_format_context": kb_format_context or {},
     }
     user_prompt = (
-        f"{banned_note}"
-        "Format ONLY the given section following your system prompt rules. "
-        "Apply banned_elements FIRST before any other formatting decision. "
+        "Format ONLY the given section into KB-style Markdown. "
         "Do not include document-level headers/footers or cover/title pages. "
         "Return ONLY a JSON object: {\"formatted_markdown\": \"...\"}\n\n"
         f"{json.dumps(payload, indent=2, ensure_ascii=False)}"
@@ -379,6 +364,16 @@ async def run_formatting(prompt: str) -> str:
         state.formatted_document = formatted_doc
         state.status = WorkflowStatus.FORMATTED
         state.current_node = "formatter"
+
+        # Persist doc metadata so sop_workflow can stamp the .docx header/footer
+        _meta = _build_document_header(state)
+        try:
+            state.document_id    = _meta.get("document_id",    getattr(state, "document_id",    ""))
+            state.sop_version    = _meta.get("version",        getattr(state, "sop_version",    "1.0"))
+            state.effective_date = _meta.get("effective_date", getattr(state, "effective_date", ""))
+        except Exception:
+            pass  # state schema may not have these fields yet
+
         # This is a rough token proxy; consider adding real token usage if available
         state.increment_tokens(800)
 
