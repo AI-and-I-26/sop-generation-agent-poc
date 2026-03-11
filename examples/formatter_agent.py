@@ -71,22 +71,14 @@ def _bedrock_model(env_var: str) -> BedrockModel:
 
 def _build_document_header(state: SOPState) -> Dict[str, Any]:
     """Constructs the metadata used for header placeholders."""
-    try:
-        from src.prompts.document_templates import KB_TEMPLATE_DEFAULTS
-        defaults = dict(KB_TEMPLATE_DEFAULTS)
-    except ImportError:
-        defaults = {"status": "CURRENT", "classification": "Confidential and Proprietary", "version": "1.0"}
-
     title = state.outline.title if state.outline else state.topic
     return {
         "title": title,
         "document_id": f"SOP-{datetime.now().strftime('%Y%m%d-%H%M')}",
-        "version": defaults.get("version", "1.0"),
+        "version": "1.0",
         "effective_date": datetime.now().strftime("%d-%b-%Y"),
         "industry": state.industry,
         "target_audience": state.target_audience,
-        "status": defaults.get("status", "CURRENT"),
-        "classification": defaults.get("classification", "Confidential and Proprietary"),
     }
 
 
@@ -101,44 +93,20 @@ def _apply_header_footer(
     body: str
 ) -> str:
     """
-    Enforces the exact KB header/footer around the LLM-generated Markdown body.
-    Also injects a per-section page header line before every ## heading so that
-    document control metadata appears at the top of each rendered page.
+    Enforces the exact KB header/footer around the LLM‑generated Markdown.
     """
-    def _substitute(template: str) -> str:
-        result = template
-        for key, value in metadata.items():
-            result = result.replace("{{" + key + "}}", str(value))
-        return result
+    if not header_template and not footer_template:
+        return body  # nothing to apply
 
-    # Build document-level header
-    header_block = _substitute(header_template).strip() if header_template else ""
+    header = header_template or ""
+    for key, value in metadata.items():
+        placeholder = "{{" + key + "}}"
+        header = header.replace(placeholder, str(value))
 
-    # Inject per-section page header line before every ## section heading
-    # This ensures document ID / version / status appears on every page when
-    # rendered to Word or PDF.
-    try:
-        from src.prompts.document_templates import KB_PAGE_HEADER_LINE
-        page_header = _substitute(KB_PAGE_HEADER_LINE)
-        # Insert the page header line immediately before each top-level ## heading
-        import re as _re
-        body = _re.sub(
-            r'(^|\n)(## )',
-            lambda m: f"{m.group(1)}\n{page_header}\n\n{m.group(2)}",
-            body
-        )
-    except ImportError:
-        pass  # KB_PAGE_HEADER_LINE not available; skip per-section injection
-
-    # Assemble final document
-    parts = []
-    if header_block:
-        parts.append(header_block)
-    parts.append(body.strip())
+    final_body = header.strip() + ("\n\n" if header.strip() else "") + body.strip()
     if footer_template and footer_template.strip():
-        parts.append(_substitute(footer_template).strip())
-
-    return "\n\n".join(parts)
+        final_body += "\n\n" + footer_template.strip()
+    return final_body
 
 
 # ---------------------------------------------------------------------------
@@ -233,9 +201,16 @@ async def _run_llm_formatter_whole(state: SOPState) -> str:
         "kb_footer_template": state.kb_footer_template or "",
     }
 
+    banned = (state.kb_format_context or {}).get("banned_elements") or []
+    banned_note = (
+        f"BANNED ELEMENTS (must NOT appear anywhere in output): {json.dumps(banned)}\n"
+        if banned else ""
+    )
+
     user_prompt = (
-        "Convert the following SOP JSON payload into KB-format Markdown "
-        "following your system prompt rules exactly.\n\n"
+        f"{banned_note}"
+        "Convert the following SOP JSON payload into formatted text "
+        "following your system prompt rules. Apply banned_elements FIRST.\n\n"
         f"{json.dumps(payload, indent=2, ensure_ascii=False)}\n\n"
         'Return ONLY a JSON object: {"formatted_markdown": "..."}'
     )
@@ -277,14 +252,22 @@ async def _format_one_section(
     """
     Formats a single section. Returns (section_key, formatted_markdown).
     """
-    # Keep prompt minimal: only the section, plus style hints
+    # Extract banned_elements to surface prominently in the prompt
+    banned = kb_format_context.get("banned_elements") or []
+    banned_note = (
+        f"BANNED ELEMENTS (must NOT appear in output): {json.dumps(banned)}\n"
+        if banned else ""
+    )
+
     payload = {
         "section_key": section_key,
         "section": section_payload,
         "kb_format_context": kb_format_context or {},
     }
     user_prompt = (
-        "Format ONLY the given section into KB-style Markdown. "
+        f"{banned_note}"
+        "Format ONLY the given section following your system prompt rules. "
+        "Apply banned_elements FIRST before any other formatting decision. "
         "Do not include document-level headers/footers or cover/title pages. "
         "Return ONLY a JSON object: {\"formatted_markdown\": \"...\"}\n\n"
         f"{json.dumps(payload, indent=2, ensure_ascii=False)}"
