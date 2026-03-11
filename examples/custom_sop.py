@@ -143,135 +143,17 @@ def write_markdown_to_docx(doc: "Document", md_text: str):
 
 
 # =============================================================================
-# OPTIONAL: PDF (.pdf) export via ReportLab
+# OPTIONAL: PDF (.pdf) export via ReportLab  — CRL header/footer on every page
 # =============================================================================
 _PDF_AVAILABLE = True
 try:
-    from reportlab.lib.pagesizes import LETTER
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.lib.enums import TA_LEFT
-    from reportlab.platypus import (
-        ListFlowable, ListItem, Paragraph, Preformatted, SimpleDocTemplate, Spacer
-    )
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
+    import reportlab  # noqa: F401 — just check it's installed
 except ImportError:
     _PDF_AVAILABLE = False
     logging.warning(
         "reportlab not installed — skipping .pdf export. "
         "Install with: pip install reportlab"
     )
-
-
-def _register_unicode_font(font_name: str = "DejaVuSans"):
-    """
-    Try to register a TrueType Unicode font for broad character support.
-    Returns the font name if successful, else None (falls back to Helvetica).
-    """
-    if not _PDF_AVAILABLE:
-        return None
-    paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
-        "/Library/Fonts/DejaVuSans.ttf",                    # macOS (if installed)
-        "C:\\Windows\\Fonts\\DejaVuSans.ttf",               # Windows (if installed)
-    ]
-    for p in paths:
-        try:
-            if Path(p).is_file():
-                pdfmetrics.registerFont(TTFont(font_name, p))
-                return font_name
-        except Exception:
-            continue
-    return None
-
-
-def write_markdown_to_pdf(pdf_path: Path, md_text: str):
-    """
-    Lightweight Markdown-to-PDF renderer using ReportLab Platypus.
-    Supports headings, bullets, numbered lists, code blocks, and paragraphs.
-
-    NOTE:
-      The formatter already outputs FULL document (including KB header/footer).
-      We do NOT add any extra title/metadata here; we render Markdown as-is.
-    """
-    if not _PDF_AVAILABLE:
-        raise RuntimeError("ReportLab is not installed.")
-
-    base_font = _register_unicode_font() or "Helvetica"
-    mono_font = base_font  # use same font for code
-
-    doc = SimpleDocTemplate(
-        str(pdf_path),
-        pagesize=LETTER,
-        rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72,
-    )
-
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle("SOP_H1",   parent=styles["Heading1"],  fontName=base_font, fontSize=16, spaceAfter=10))
-    styles.add(ParagraphStyle("SOP_H2",   parent=styles["Heading2"],  fontName=base_font, fontSize=13, spaceAfter=8))
-    styles.add(ParagraphStyle("SOP_H3",   parent=styles["Heading3"],  fontName=base_font, fontSize=11, spaceAfter=6))
-    styles.add(ParagraphStyle("SOP_BODY", parent=styles["BodyText"],  fontName=base_font, leading=14,  spaceAfter=6))
-    styles.add(ParagraphStyle("SOP_CODE", fontName=mono_font, fontSize=9, leading=11, spaceAfter=4))
-
-    flow = []
-
-    in_code_block = False
-    pending_bullets: list = []
-    pending_numbers: list = []
-
-    number_re = re.compile(r"^\s*\d+\.\s+")
-    fence_re = re.compile(r"^```")
-
-    def flush_lists():
-        """Flush any accumulated list items to the flow."""
-        nonlocal pending_bullets, pending_numbers
-        if pending_bullets:
-            items = [ListItem(Paragraph(t, styles["SOP_BODY"])) for t in pending_bullets]
-            flow.append(ListFlowable(items, bulletType="bullet", start="circle", leftIndent=18))
-            pending_bullets = []
-            flow.append(Spacer(1, 4))
-        if pending_numbers:
-            items = [ListItem(Paragraph(t, styles["SOP_BODY"])) for t in pending_numbers]
-            flow.append(ListFlowable(items, bulletType="1", leftIndent=18))
-            pending_numbers = []
-            flow.append(Spacer(1, 4))
-
-    for raw_line in md_text.splitlines():
-        line = raw_line.rstrip()
-
-        if fence_re.match(line.strip()):
-            flush_lists()
-            in_code_block = not in_code_block
-            if not in_code_block:
-                flow.append(Spacer(1, 6))
-            continue
-
-        if in_code_block:
-            flow.append(Preformatted(raw_line, styles["SOP_CODE"]))
-            continue
-
-        if line.startswith("### "):
-            flush_lists()
-            flow.append(Paragraph(line[4:].strip(), styles["SOP_H3"]))
-        elif line.startswith("## "):
-            flush_lists()
-            flow.append(Paragraph(line[3:].strip(), styles["SOP_H2"]))
-        elif line.startswith("# "):
-            flush_lists()
-            flow.append(Paragraph(line[2:].strip(), styles["SOP_H1"]))
-        elif line.lstrip().startswith("- ") or line.lstrip().startswith("* "):
-            pending_bullets.append(line.lstrip()[2:].strip())
-        elif number_re.match(line):
-            pending_numbers.append(number_re.sub("", line).strip())
-        elif line.strip() == "":
-            flush_lists()
-            flow.append(Spacer(1, 6))
-        else:
-            flush_lists()
-            flow.append(Paragraph(raw_line, styles["SOP_BODY"]))
-
-    flush_lists()
-    doc.build(flow)
 
 
 # =============================================================================
@@ -366,12 +248,27 @@ async def main():
         logging.exception("Failed to create .docx: %s", e)
         docx_path = None
 
-    # ── Write PDF ─────────────────────────────────────────────────────────────
+    # ── Write PDF (CRL header/footer on every page) ──────────────────────────
     pdf_path = None
     if _PDF_AVAILABLE:
         try:
+            from src.utils.crl_pdf_writer import write_crl_pdf
+            from datetime import datetime as _dt
+
+            _doc_id  = getattr(result, "document_id",    None) or f"SOP-{abs(hash(TOPIC)) % 100000:05d}"
+            _version = getattr(result, "sop_version",    "1.0")
+            _eff_dt  = getattr(result, "effective_date", _dt.now().strftime("%d/%b/%Y"))
+
             pdf_path = Path(f"sop_{safe_name}.pdf")
-            write_markdown_to_pdf(pdf_path, doc_text)
+            write_crl_pdf(
+                pdf_path=pdf_path,
+                title=TOPIC,
+                document_id=_doc_id,
+                version=_version,
+                effective_date=_eff_dt,
+                markdown_body=doc_text,
+            )
+            logging.info("CRL .pdf written — %d bytes | path=%s", pdf_path.stat().st_size, pdf_path)
         except Exception as e:
             logging.exception("Failed to create .pdf: %s", e)
             pdf_path = None
@@ -402,4 +299,3 @@ async def main():
 # =============================================================================
 if __name__ == "__main__":
     asyncio.run(main())
-
