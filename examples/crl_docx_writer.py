@@ -1,432 +1,503 @@
 # src/utils/crl_docx_writer.py
 """
-crl_docx_writer.py — Generates a .docx SOP document with exact CRL-style
-per-page header and footer on EVERY page, matching the Charles River
-Laboratories standard operating procedure template.
+Generates a .docx with exact CRL per-page header and footer on EVERY page.
 
-HEADER (every page):
-┌─────────────────┬──────────────────────┬──────────────────────────────┐
-│  charles river  │ STANDARD OPERATING   │  Doc #: {{document_id}}      │
-│    (logo text)  │    PROCEDURE         │  Rev #: {{version}}           │
-│                 │                      │  Effective Date: {{eff_date}} │
-├─────────────────┴──────────────────────┴──────────────────────────────┤
-│  Title: {{title}}                                                       │
-├─────────────────────────────────────────────────────────────────────────┤
-│         Status CURRENT, Confidential & Proprietary (centred, grey)     │
-└─────────────────────────────────────────────────────────────────────────┘
+PAGE LAYOUT (US Letter, all units in twips — 1 inch = 1440 twips):
+  Page:    12240 × 15840
+  Margins: L=1440, R=1440, T=2160, B=1440
+  Content width = 12240 - 1440 - 1440 = 9360 twips
 
-FOOTER (every page):
-══════════════════════════════════════════════════════   ← double rule
-                                          Page X of Y   ← right-aligned
+HEADER TABLE column widths (must sum to 9360):
+  Col 0 (charles river): 1800
+  Col 1 (SOP title):     4500
+  Col 2 (Doc#/Rev/Date): 3060
+  Total:                 9360  ✓
 
-USAGE
------
-From your pipeline's docx generation step:
-
-    from src.utils.crl_docx_writer import build_crl_docx
-
-    docx_bytes = build_crl_docx(
-        title="Global Technology Infrastructure Qualification SOP",
-        document_id="GLBL-SOP-00060",
-        version="6",
-        effective_date="30/Nov/2024",
-        markdown_body=state.formatted_markdown,   # or plain text sections
-    )
-    with open("output.docx", "wb") as f:
-        f.write(docx_bytes)
-
-The function also accepts a pre-parsed list of (heading_level, text) tuples
-via the `sections` parameter for richer structure control.
+FOOTER: double top-border paragraph, "Page X of Y" right-aligned
 """
 
 from __future__ import annotations
 
 import io
-import re
+import zipfile
 from datetime import datetime
-from typing import List, Optional, Tuple
-
-from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
-from docx.oxml.ns import qn
-from docx.oxml import OxmlElement
-from docx.shared import Inches, Pt, RGBColor, Cm, Twips
+from typing import List
 
 
-# ---------------------------------------------------------------------------
-# CONSTANTS — matching the CRL template exactly
-# ---------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────────────
+# PAGE LAYOUT (twips)
+# ──────────────────────────────────────────────────────────────
+PAGE_W    = 12240   # 8.5 in
+PAGE_H    = 15840   # 11  in
+MARGIN_L  = 1440    # 1.0 in
+MARGIN_R  = 1440    # 1.0 in
+MARGIN_T  = 2160    # 1.5 in  (header needs extra room)
+MARGIN_B  = 1440    # 1.0 in
+HDR_DIST  = 432     # 0.3 in
+FTR_DIST  = 432     # 0.3 in
 
-_CRL_BRAND_NAME   = "charles river"
-_SOP_LABEL        = "STANDARD OPERATING\nPROCEDURE"
-_STATUS_LINE      = "Status CURRENT, Confidential & Proprietary"
+CONTENT_W = PAGE_W - MARGIN_L - MARGIN_R   # 9360
 
-# Colours (from image analysis)
-_GREY_STATUS      = RGBColor(0x80, 0x80, 0x80)   # grey status line text
-_BLACK            = RGBColor(0x00, 0x00, 0x00)
-_BORDER_COLOR     = "000000"
-
-# Page layout — US Letter, 1-inch margins
-_PAGE_WIDTH       = Inches(8.5)
-_PAGE_HEIGHT      = Inches(11)
-_MARGIN           = Inches(1.0)
-_CONTENT_WIDTH_DXA = int((_PAGE_WIDTH - 2 * _MARGIN) / Twips(1))  # ≈ 9360 twips
-
-# Column widths for the 3-column header table (twips)
-# Left: ~1.5", Centre: ~4.5", Right: ~3"  — total = content width
-_COL_LEFT   = int(Inches(1.5) / Twips(1))
-_COL_CENTRE = int(Inches(4.5) / Twips(1))
-_COL_RIGHT  = int(Inches(3.0) / Twips(1))
+# Header table columns — must sum EXACTLY to CONTENT_W
+COL_LOGO   = 1800   # "charles river"
+COL_TITLE  = 4500   # "STANDARD OPERATING PROCEDURE"
+COL_META   = 3060   # Doc#, Rev#, Date
+assert COL_LOGO + COL_TITLE + COL_META == CONTENT_W, "Column widths must sum to CONTENT_W"
 
 
-# ---------------------------------------------------------------------------
-# XML HELPERS
-# ---------------------------------------------------------------------------
-
-def _set_cell_border(cell, **kwargs):
-    """Set borders on a table cell. kwargs: top/bottom/left/right = True/False."""
-    tc   = cell._tc
-    tcPr = tc.get_or_add_tcPr()
-    tcBorders = OxmlElement("w:tcBorders")
-    sides = {"top": "w:top", "bottom": "w:bottom", "left": "w:left", "right": "w:right",
-             "insideH": "w:insideH", "insideV": "w:insideV"}
-    for side, tag in sides.items():
-        val = kwargs.get(side, True)
-        el = OxmlElement(tag)
-        if val:
-            el.set(qn("w:val"),   "single")
-            el.set(qn("w:sz"),    "6")
-            el.set(qn("w:space"), "0")
-            el.set(qn("w:color"), _BORDER_COLOR)
-        else:
-            el.set(qn("w:val"), "none")
-        tcBorders.append(el)
-    tcPr.append(tcBorders)
+# ──────────────────────────────────────────────────────────────
+# XML NAMESPACES (used in every part file)
+# ──────────────────────────────────────────────────────────────
+_NS = (
+    'xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" '
+    'xmlns:mo="http://schemas.microsoft.com/office/mac/office/2008/main" '
+    'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+    'xmlns:mv="urn:schemas-microsoft-com:mac:vml" '
+    'xmlns:o="urn:schemas-microsoft-com:office:office" '
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+    'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" '
+    'xmlns:v="urn:schemas-microsoft-com:vml" '
+    'xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" '
+    'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+    'xmlns:w10="urn:schemas-microsoft-com:office:word" '
+    'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+    'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" '
+    'xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" '
+    'mc:Ignorable="w14 wp14"'
+)
 
 
-def _no_space_para(cell):
-    """Remove paragraph spacing from all paragraphs in a cell."""
-    for p in cell.paragraphs:
-        pPr = p._p.get_or_add_pPr()
-        spacing = OxmlElement("w:spacing")
-        spacing.set(qn("w:before"), "0")
-        spacing.set(qn("w:after"),  "0")
-        pPr.append(spacing)
+# ──────────────────────────────────────────────────────────────
+# LOW-LEVEL XML HELPERS
+# ──────────────────────────────────────────────────────────────
+
+def _esc(text: str) -> str:
+    return (text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "&quot;"))
 
 
-def _add_run(para, text: str, bold=False, size_pt: int = 9,
-             color: RGBColor = _BLACK, italic=False) -> None:
-    run = para.add_run(text)
-    run.bold   = bold
-    run.italic = italic
-    run.font.size  = Pt(size_pt)
-    run.font.color.rgb = color
-    run.font.name  = "Arial"
+def _rpr(font="Arial", sz=18, bold=False, italic=False, color="000000") -> str:
+    b = "<w:b/>" if bold else '<w:b w:val="0"/>'
+    i = "<w:i/>" if italic else '<w:i w:val="0"/>'
+    return (
+        f"<w:rPr>"
+        f'<w:rFonts w:ascii="{font}" w:hAnsi="{font}"/>'
+        f"{b}{i}"
+        f'<w:color w:val="{color}"/>'
+        f'<w:sz w:val="{sz}"/>'
+        f"</w:rPr>"
+    )
 
 
-def _make_table_border(table):
-    """Apply single black border to entire table."""
-    tbl    = table._tbl
-    tblPr  = tbl.find(qn("w:tblPr"))
-    if tblPr is None:
-        tblPr = OxmlElement("w:tblPr")
-    tblBorders = OxmlElement("w:tblBorders")
-    for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
-        el = OxmlElement(f"w:{side}")
-        el.set(qn("w:val"),   "single")
-        el.set(qn("w:sz"),    "6")
-        el.set(qn("w:space"), "0")
-        el.set(qn("w:color"), _BORDER_COLOR)
-        tblBorders.append(el)
-    tblPr.append(tblBorders)
-    if tbl.find(qn("w:tblPr")) is None:
-        tbl.insert(0, tblPr)
+def _run(text: str, **kw) -> str:
+    space = ' xml:space="preserve"' if " " in text or text != text.strip() else ""
+    return f"<w:r>{_rpr(**kw)}<w:t{space}>{_esc(text)}</w:t></w:r>"
 
 
-def _page_number_field(para, prefix: str = "Page ", suffix: str = " of "):
-    """Insert 'Page X of Y' field runs into a paragraph."""
-    _add_run(para, prefix, size_pt=9)
-
-    # PAGE field
-    fldBegin = OxmlElement("w:fldChar"); fldBegin.set(qn("w:fldCharType"), "begin")
-    instrText = OxmlElement("w:instrText"); instrText.set(qn("xml:space"), "preserve")
-    instrText.text = " PAGE "
-    fldEnd = OxmlElement("w:fldChar"); fldEnd.set(qn("w:fldCharType"), "end")
-    run = para.add_run(); r = run._r
-    r.append(fldBegin); r.append(instrText); r.append(fldEnd)
-    run.font.size = Pt(9); run.font.name = "Arial"
-
-    _add_run(para, suffix, size_pt=9)
-
-    # NUMPAGES field
-    fldBegin2 = OxmlElement("w:fldChar"); fldBegin2.set(qn("w:fldCharType"), "begin")
-    instrText2 = OxmlElement("w:instrText"); instrText2.set(qn("xml:space"), "preserve")
-    instrText2.text = " NUMPAGES "
-    fldEnd2 = OxmlElement("w:fldChar"); fldEnd2.set(qn("w:fldCharType"), "end")
-    run2 = para.add_run(); r2 = run2._r
-    r2.append(fldBegin2); r2.append(instrText2); r2.append(fldEnd2)
-    run2.font.size = Pt(9); run2.font.name = "Arial"
+def _para(inner: str, align: str = "left", before: int = 0, after: int = 0,
+          top_border: str = "") -> str:
+    jc  = f'<w:jc w:val="{align}"/>' if align != "left" else ""
+    spc = f'<w:spacing w:before="{before}" w:after="{after}"/>'
+    bdr = (
+        f"<w:pBdr><w:top w:val=\"{top_border}\" w:sz=\"6\" "
+        f'w:space="1" w:color="000000"/></w:pBdr>'
+    ) if top_border else ""
+    return f"<w:p><w:pPr>{jc}{spc}{bdr}</w:pPr>{inner}</w:p>"
 
 
-def _double_rule_para(para):
-    """Apply a top double-border to a paragraph (mimics the footer double rule)."""
-    pPr  = para._p.get_or_add_pPr()
-    pBdr = OxmlElement("w:pBdr")
-    top  = OxmlElement("w:top")
-    top.set(qn("w:val"),   "double")
-    top.set(qn("w:sz"),    "6")
-    top.set(qn("w:space"), "1")
-    top.set(qn("w:color"), _BORDER_COLOR)
-    pBdr.append(top)
-    pPr.append(pBdr)
-    # Remove paragraph spacing
-    spacing = OxmlElement("w:spacing")
-    spacing.set(qn("w:before"), "0")
-    spacing.set(qn("w:after"),  "60")
-    pPr.append(spacing)
+def _all_borders() -> str:
+    sides = ["top", "left", "bottom", "right", "insideH", "insideV"]
+    return "<w:tblBorders>" + "".join(
+        f'<w:{s} w:val="single" w:sz="6" w:space="0" w:color="000000"/>'
+        for s in sides
+    ) + "</w:tblBorders>"
 
 
-# ---------------------------------------------------------------------------
-# CRL HEADER BUILDER
-# ---------------------------------------------------------------------------
+def _cell(content: str, w: int, valign: str = "top") -> str:
+    return (
+        f"<w:tc>"
+        f"<w:tcPr>"
+        f'<w:tcW w:type="dxa" w:w="{w}"/>'
+        f'<w:vAlign w:val="{valign}"/>'
+        f"</w:tcPr>"
+        f"{content}"
+        f"</w:tc>"
+    )
 
-def _build_crl_header(header_obj, title: str, document_id: str,
-                      version: str, effective_date: str) -> None:
+
+def _table(rows_xml: str, col_widths: List[int]) -> str:
+    total = sum(col_widths)
+    grid  = "".join(f'<w:gridCol w:w="{w}"/>' for w in col_widths)
+    return (
+        f"<w:tbl>"
+        f"<w:tblPr>"
+        f'<w:tblW w:type="dxa" w:w="{total}"/>'
+        f'<w:jc w:val="left"/>'
+        f"{_all_borders()}"
+        f"</w:tblPr>"
+        f"<w:tblGrid>{grid}</w:tblGrid>"
+        f"{rows_xml}"
+        f"</w:tbl>"
+    )
+
+
+# ──────────────────────────────────────────────────────────────
+# HEADER XML
+# ──────────────────────────────────────────────────────────────
+
+def _header_xml(title: str, document_id: str,
+                version: str, effective_date: str) -> str:
     """
-    Builds the CRL 3-part header table into the given Header object.
-
-    Layout mirrors the uploaded Header.jpg exactly:
-    ┌──────────────┬──────────────────────┬────────────────────────────┐
-    │ charles river│ STANDARD OPERATING   │ Doc #: GLBL-SOP-00060      │
-    │              │    PROCEDURE         │ Rev #: 6                   │
-    │              │                      │ Effective Date: 30/Nov/2024│
-    ├──────────────┴──────────────────────┴────────────────────────────┤
-    │ Title: <title>                                                     │
-    ├────────────────────────────────────────────────────────────────────┤
-    │          Status CURRENT, Confidential & Proprietary                │
-    └────────────────────────────────────────────────────────────────────┘
+    3-column top table + full-width title table + status paragraph.
+    All widths are exact dxa (twips) values summing to CONTENT_W=9360.
     """
-    # Clear any default empty paragraph
-    for p in header_obj.paragraphs:
-        p._p.getparent().remove(p._p)
+    # ── Cell 0: "charles river" italic, centred ───────────────────────
+    c0 = _cell(
+        _para(_run("charles river", sz=20, italic=True), align="center", before=60, after=60),
+        COL_LOGO, valign="center"
+    )
 
-    # ── Row 1: 3-column identity row ────────────────────────────────────
-    tbl = header_obj.add_table(rows=1, cols=3, width=Twips(_COL_LEFT + _COL_CENTRE + _COL_RIGHT))
-    tbl.alignment = WD_TABLE_ALIGNMENT.LEFT
-    tbl.style    = "Table Grid"
+    # ── Cell 1: "STANDARD OPERATING" / "PROCEDURE" bold, centred ─────
+    c1_inner = (
+        _para(_run("STANDARD OPERATING", sz=22, bold=True), align="center", before=40, after=0) +
+        _para(_run("PROCEDURE",          sz=22, bold=True), align="center", before=0,  after=40)
+    )
+    c1 = _cell(c1_inner, COL_TITLE, valign="center")
 
-    # Set column widths
-    for i, width in enumerate([_COL_LEFT, _COL_CENTRE, _COL_RIGHT]):
-        for cell in tbl.columns[i].cells:
-            cell.width = Twips(width)
+    # ── Cell 2: Doc#, Rev#, Effective Date ────────────────────────────
+    c2_inner = (
+        _para(_run(f"Doc #: {document_id}",       sz=17), before=40, after=40) +
+        _para(_run(f"Rev #: {version}",            sz=17), before=0,  after=40) +
+        _para(_run(f"Effective Date: {effective_date}", sz=17), before=0, after=40)
+    )
+    c2 = _cell(c2_inner, COL_META, valign="top")
 
-    row0 = tbl.rows[0]
+    table1 = _table(f"<w:tr>{c0}{c1}{c2}</w:tr>", [COL_LOGO, COL_TITLE, COL_META])
 
-    # Cell 0 — "charles river" brand (left-aligned, vertically centred)
-    c0 = row0.cells[0]
-    c0.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-    p0 = c0.paragraphs[0]
-    p0.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _add_run(p0, _CRL_BRAND_NAME, bold=False, size_pt=12, italic=True)
-    _no_space_para(c0)
+    # ── Full-width Title row ──────────────────────────────────────────
+    title_cell = _cell(
+        _para(_run(f"Title: {title}", sz=19), before=60, after=60),
+        CONTENT_W, valign="center"
+    )
+    table2 = _table(f"<w:tr>{title_cell}</w:tr>", [CONTENT_W])
 
-    # Cell 1 — "STANDARD OPERATING PROCEDURE" (bold, centred)
-    c1 = row0.cells[1]
-    c1.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-    p1 = c1.paragraphs[0]
-    p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _add_run(p1, "STANDARD OPERATING\nPROCEDURE", bold=True, size_pt=11)
-    _no_space_para(c1)
+    # ── Status line ───────────────────────────────────────────────────
+    status = _para(
+        _run("Status CURRENT, Confidential & Proprietary", sz=17, color="808080"),
+        align="center", before=60, after=0
+    )
 
-    # Cell 2 — Doc meta (right column, smaller font, left-aligned)
-    c2 = row0.cells[2]
-    c2.vertical_alignment = WD_ALIGN_VERTICAL.TOP
-    p2a = c2.paragraphs[0]
-    _add_run(p2a, f"Doc #: {document_id}", size_pt=9)
-    p2b = c2.add_paragraph()
-    _add_run(p2b, f"Rev #: {version}", size_pt=9)
-    p2c = c2.add_paragraph()
-    _add_run(p2c, f"Effective Date: {effective_date}", size_pt=9)
-    for p in [p2a, p2b, p2c]:
-        pPr = p._p.get_or_add_pPr()
-        sp  = OxmlElement("w:spacing")
-        sp.set(qn("w:before"), "0")
-        sp.set(qn("w:after"),  "40")
-        pPr.append(sp)
-
-    _make_table_border(tbl)
-
-    # ── Row 2: Title row (merged across all 3 cols) ──────────────────────
-    tbl2 = header_obj.add_table(rows=1, cols=1, width=Twips(_COL_LEFT + _COL_CENTRE + _COL_RIGHT))
-    tbl2.alignment = WD_TABLE_ALIGNMENT.LEFT
-    tbl2.style = "Table Grid"
-    tbl2.columns[0].cells[0].width = Twips(_COL_LEFT + _COL_CENTRE + _COL_RIGHT)
-    title_cell = tbl2.rows[0].cells[0]
-    p_title = title_cell.paragraphs[0]
-    _add_run(p_title, f"Title: {title}", size_pt=10, bold=False)
-    pPr = p_title._p.get_or_add_pPr()
-    sp = OxmlElement("w:spacing"); sp.set(qn("w:before"), "40"); sp.set(qn("w:after"), "40")
-    pPr.append(sp)
-    _make_table_border(tbl2)
-
-    # ── Row 3: Status line (grey, centred) ───────────────────────────────
-    p_status = header_obj.add_paragraph()
-    p_status.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _add_run(p_status, _STATUS_LINE, size_pt=9, color=_GREY_STATUS, italic=False)
-    pPr = p_status._p.get_or_add_pPr()
-    sp = OxmlElement("w:spacing"); sp.set(qn("w:before"), "40"); sp.set(qn("w:after"), "0")
-    pPr.append(sp)
+    return (
+        f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f"<w:hdr {_NS}>"
+        f"{table1}"
+        f"{table2}"
+        f"{status}"
+        f"</w:hdr>"
+    )
 
 
-# ---------------------------------------------------------------------------
-# CRL FOOTER BUILDER
-# ---------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────────────
+# FOOTER XML
+# ──────────────────────────────────────────────────────────────
 
-def _build_crl_footer(footer_obj) -> None:
-    """
-    Builds the CRL footer: double top-rule + right-aligned "Page X of Y".
+def _footer_xml() -> str:
+    """Double top-border paragraph with right-aligned PAGE / NUMPAGES fields."""
 
-    Mirrors Footer.jpg exactly:
-    ══════════════════════════════════════════  ← double rule
-                                  Page 1 of 11  ← right-aligned
-    """
-    # Remove default empty paragraph
-    for p in footer_obj.paragraphs:
-        p._p.getparent().remove(p._p)
+    def _field(instr: str) -> str:
+        rpr = _rpr(sz=18)
+        return (
+            f"<w:r>{rpr}<w:fldChar w:fldCharType=\"begin\"/></w:r>"
+            f"<w:r>{rpr}<w:instrText xml:space=\"preserve\"> {instr} </w:instrText></w:r>"
+            f"<w:r>{rpr}<w:fldChar w:fldCharType=\"end\"/></w:r>"
+        )
 
-    # Single paragraph with double top-border and right-aligned page number
-    p = footer_obj.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    _double_rule_para(p)
-    _page_number_field(p, prefix="Page ", suffix=" of ")
+    rpr18 = _rpr(sz=18)
+    inner = (
+        f'<w:r>{rpr18}<w:t xml:space="preserve">Page </w:t></w:r>'
+        f"{_field('PAGE')}"
+        f'<w:r>{rpr18}<w:t xml:space="preserve"> of </w:t></w:r>'
+        f"{_field('NUMPAGES')}"
+    )
+
+    para = (
+        f"<w:p>"
+        f"<w:pPr>"
+        f'<w:jc w:val="right"/>'
+        f'<w:spacing w:before="0" w:after="0"/>'
+        f"<w:pBdr>"
+        f'<w:top w:val="double" w:sz="6" w:space="1" w:color="000000"/>'
+        f"</w:pBdr>"
+        f"</w:pPr>"
+        f"{inner}"
+        f"</w:p>"
+    )
+
+    return (
+        f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f"<w:ftr {_NS}>{para}</w:ftr>"
+    )
 
 
-# ---------------------------------------------------------------------------
-# MARKDOWN → DOCX BODY PARSER
-# ---------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────────────
+# DOCUMENT BODY  (Markdown → Word XML)
+# ──────────────────────────────────────────────────────────────
 
-def _parse_markdown_to_paragraphs(md: str) -> List[Tuple[str, str, int]]:
-    """
-    Very lightweight Markdown → list of (type, text, level) tuples.
-    Types: 'heading', 'table_header', 'table_row', 'table_sep', 'text', 'blank'
+import re as _re
 
-    Handles:
-    - ## H2  →  ('heading', text, 2)
-    - ### H3 →  ('heading', text, 3)
-    - | col | → ('table_row', raw_line, 0)
-    - |---|  → ('table_sep', '', 0)
-    - plain   → ('text', text, 0)
-    - italic page-header lines  → skipped (pipeline-injected per-section headers)
-    """
+def _md_to_body(md: str) -> str:
+    """Convert Markdown to Word body XML paragraphs/tables."""
+    lines  = md.splitlines()
     result = []
-    for raw in md.splitlines():
-        line = raw.rstrip()
-        # Skip pipeline-injected per-section page-header italic lines
-        if line.startswith("*") and ("Doc #:" in line or "CURRENT" in line):
-            continue
-        if not line.strip():
-            result.append(("blank", "", 0))
-            continue
-        m = re.match(r"^(#{1,6})\s+(.*)", line)
-        if m:
-            level = len(m.group(1))
-            result.append(("heading", m.group(2).strip(), level))
-            continue
-        if line.strip().startswith("|"):
-            # Table separator row
-            if re.match(r"^\|[\s\-:|]+\|", line.strip()):
-                result.append(("table_sep", "", 0))
-            else:
-                result.append(("table_row", line.strip(), 0))
-            continue
-        # Strip markdown bold/italic markers for plain text output
-        cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
-        cleaned = re.sub(r"\*(.+?)\*",   r"\1", cleaned)
-        cleaned = re.sub(r"> ?",         "",    cleaned)
-        result.append(("text", cleaned.strip(), 0))
-    return result
-
-
-def _add_body_content(doc: Document, markdown_body: str) -> None:
-    """
-    Writes the formatted SOP body into the document.
-    Converts Markdown headings → Word headings, tables → Word tables,
-    and plain text → Normal paragraphs.
-    """
-    items = _parse_markdown_to_paragraphs(markdown_body)
-
-    # Collect table rows
     i = 0
-    while i < len(items):
-        typ, text, level = items[i]
 
-        if typ == "blank":
+    def body_para(text: str, bold: bool = False) -> str:
+        clean = _re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+        clean = _re.sub(r"\*(.+?)\*",     r"\1", clean)
+        clean = _re.sub(r"^>\s*",         "",    clean).strip()
+        if not clean:
+            return ""
+        sz = 20
+        b  = "<w:b/>" if bold else ""
+        rpr = f'<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/>{b}<w:sz w:val="{sz}"/></w:rPr>'
+        return (
+            f"<w:p><w:pPr><w:spacing w:before=\"60\" w:after=\"60\"/></w:pPr>"
+            f'<w:r>{rpr}<w:t xml:space="preserve">{_esc(clean)}</w:t></w:r></w:p>'
+        )
+
+    def heading(text: str, level: int) -> str:
+        clean = _re.sub(r"\*\*(.+?)\*\*", r"\1", text).strip()
+        sz_map = {1: 32, 2: 28, 3: 24, 4: 22}
+        st_map = {1: "Heading1", 2: "Heading2", 3: "Heading3", 4: "Heading4"}
+        sz  = sz_map.get(level, 22)
+        st  = st_map.get(level, "Heading2")
+        rpr = f'<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="{sz}"/></w:rPr>'
+        return (
+            f'<w:p><w:pPr><w:pStyle w:val="{st}"/>'
+            f'<w:spacing w:before="120" w:after="60"/></w:pPr>'
+            f'<w:r>{rpr}<w:t>{_esc(clean)}</w:t></w:r></w:p>'
+        )
+
+    def md_table(rows: List[List[str]]) -> str:
+        if not rows:
+            return ""
+        ncols  = max(len(r) for r in rows)
+        col_w  = CONTENT_W // ncols
+        widths = [col_w] * ncols
+        widths[-1] = CONTENT_W - col_w * (ncols - 1)
+        grid   = "".join(f'<w:gridCol w:w="{w}"/>' for w in widths)
+        rows_xml = ""
+        for ri, row in enumerate(rows):
+            cells_xml = ""
+            for ci in range(ncols):
+                val  = row[ci] if ci < len(row) else ""
+                val  = _re.sub(r"\*\*(.+?)\*\*", r"\1", val).strip()
+                bold = "<w:b/>" if ri == 0 else ""
+                rpr  = f'<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/>{bold}<w:sz w:val="18"/></w:rPr>'
+                cell_p = (
+                    f"<w:p><w:pPr><w:spacing w:before=\"40\" w:after=\"40\"/></w:pPr>"
+                    f'<w:r>{rpr}<w:t xml:space="preserve">{_esc(val)}</w:t></w:r></w:p>'
+                )
+                cells_xml += (
+                    f"<w:tc>"
+                    f'<w:tcPr><w:tcW w:type="dxa" w:w="{widths[ci]}"/></w:tcPr>'
+                    f"{cell_p}</w:tc>"
+                )
+            rows_xml += f"<w:tr>{cells_xml}</w:tr>"
+        total = sum(widths)
+        return (
+            f"<w:tbl>"
+            f'<w:tblPr><w:tblW w:type="dxa" w:w="{total}"/>'
+            f'<w:jc w:val="left"/>{_all_borders()}</w:tblPr>'
+            f"<w:tblGrid>{grid}</w:tblGrid>"
+            f"{rows_xml}</w:tbl>"
+        )
+
+    while i < len(lines):
+        line = lines[i].rstrip()
+
+        # Skip pipeline-injected header metadata lines
+        if _re.match(r"^\*.*Doc #:.*\*$", line) or _re.match(r"^\*.*CURRENT.*\*$", line):
             i += 1
             continue
 
-        if typ == "heading":
-            style = {
-                2: "Heading 2",
-                3: "Heading 3",
-                4: "Heading 4",
-            }.get(level, "Heading 2")
-            p = doc.add_paragraph(style=style)
-            # Strip any residual markdown bold
-            clean = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
-            p.add_run(clean).bold = (level <= 2)
+        if not line.strip():
             i += 1
             continue
 
-        if typ == "table_row":
-            # Collect all rows of this table
-            table_rows = []
-            while i < len(items) and items[i][0] in ("table_row", "table_sep", "blank"):
-                if items[i][0] == "table_row":
-                    cols = [c.strip() for c in items[i][1].strip("|").split("|")]
-                    cols = [re.sub(r"\*\*(.+?)\*\*", r"\1", c) for c in cols]
+        # Heading
+        m = _re.match(r"^(#{1,6})\s+(.*)", line)
+        if m:
+            result.append(heading(m.group(2), len(m.group(1))))
+            i += 1
+            continue
+
+        # Table
+        if line.strip().startswith("|"):
+            table_rows: List[List[str]] = []
+            while i < len(lines):
+                l = lines[i].rstrip()
+                if not l.strip():
+                    break
+                if l.strip().startswith("|"):
+                    if _re.match(r"^\|[\s\-:|]+\|", l.strip()):
+                        i += 1
+                        continue
+                    cols = [c.strip() for c in l.strip().strip("|").split("|")]
                     table_rows.append(cols)
+                else:
+                    break
                 i += 1
-
-            if not table_rows:
-                continue
-
-            ncols = max(len(r) for r in table_rows)
-            tbl   = doc.add_table(rows=len(table_rows), cols=ncols)
-            tbl.style = "Table Grid"
-            tbl.alignment = WD_TABLE_ALIGNMENT.LEFT
-
-            # Distribute columns evenly across content width
-            col_w = _CONTENT_WIDTH_DXA // ncols
-            for ri, row_data in enumerate(table_rows):
-                row = tbl.rows[ri]
-                for ci in range(ncols):
-                    cell = row.cells[ci]
-                    cell.width = Twips(col_w)
-                    text_val = row_data[ci] if ci < len(row_data) else ""
-                    p = cell.paragraphs[0]
-                    run = p.add_run(text_val)
-                    if ri == 0:      # Header row — bold
-                        run.bold = True
-                    run.font.size = Pt(9)
-                    run.font.name = "Arial"
+            if table_rows:
+                result.append(md_table(table_rows))
             continue
 
-        if typ == "text":
-            if text.strip():
-                p = doc.add_paragraph(style="Normal")
-                run = p.add_run(text)
-                run.font.size = Pt(10)
-                run.font.name = "Arial"
+        # Code block
+        if line.startswith("```"):
+            i += 1
+            while i < len(lines) and not lines[i].startswith("```"):
+                t = lines[i].rstrip()
+                if t:
+                    result.append(body_para(t))
+                i += 1
             i += 1
             continue
 
+        # Normal paragraph (strip list markers)
+        text = _re.sub(r"^[-*]\s+", "", line)
+        text = _re.sub(r"^\d+\.\s+", "", text)
+        if text.strip():
+            result.append(body_para(text))
         i += 1
 
+    return "".join(result)
 
-# ---------------------------------------------------------------------------
+
+# ──────────────────────────────────────────────────────────────
+# STATIC DOCX PART FILES
+# ──────────────────────────────────────────────────────────────
+
+_CONTENT_TYPES = """\
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml"  ContentType="application/xml"/>
+  <Override PartName="/word/document.xml"
+            ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml"
+            ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+  <Override PartName="/word/header1.xml"
+            ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>
+  <Override PartName="/word/footer1.xml"
+            ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>
+  <Override PartName="/word/settings.xml"
+            ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>
+</Types>
+"""
+
+_ROOT_RELS = """\
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1"
+    Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
+    Target="word/document.xml"/>
+</Relationships>
+"""
+
+_WORD_RELS = """\
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1"
+    Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"
+    Target="styles.xml"/>
+  <Relationship Id="rId2"
+    Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings"
+    Target="settings.xml"/>
+  <Relationship Id="rId3"
+    Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header"
+    Target="header1.xml"/>
+  <Relationship Id="rId4"
+    Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer"
+    Target="footer1.xml"/>
+</Relationships>
+"""
+
+_SETTINGS = """\
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:defaultTabStop w:val="720"/>
+  <w:compat>
+    <w:compatSetting w:name="compatibilityMode"
+      w:uri="http://schemas.microsoft.com/office/word" w:val="15"/>
+  </w:compat>
+</w:settings>
+"""
+
+_STYLES = """\
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  mc:Ignorable="w14">
+  <w:docDefaults><w:rPrDefault><w:rPr>
+    <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/>
+    <w:sz w:val="20"/><w:szCs w:val="20"/>
+  </w:rPr></w:rPrDefault></w:docDefaults>
+  <w:style w:type="paragraph" w:styleId="Normal">
+    <w:name w:val="Normal"/>
+    <w:pPr><w:spacing w:after="120"/></w:pPr>
+    <w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="20"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading1">
+    <w:name w:val="heading 1"/><w:basedOn w:val="Normal"/>
+    <w:pPr><w:outlineLvl w:val="0"/><w:spacing w:before="240" w:after="120"/></w:pPr>
+    <w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="32"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading2">
+    <w:name w:val="heading 2"/><w:basedOn w:val="Normal"/>
+    <w:pPr><w:outlineLvl w:val="1"/><w:spacing w:before="200" w:after="100"/></w:pPr>
+    <w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="28"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading3">
+    <w:name w:val="heading 3"/><w:basedOn w:val="Normal"/>
+    <w:pPr><w:outlineLvl w:val="2"/><w:spacing w:before="160" w:after="80"/></w:pPr>
+    <w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="24"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading4">
+    <w:name w:val="heading 4"/><w:basedOn w:val="Normal"/>
+    <w:pPr><w:outlineLvl w:val="3"/><w:spacing w:before="120" w:after="60"/></w:pPr>
+    <w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="22"/></w:rPr>
+  </w:style>
+</w:styles>
+"""
+
+
+def _document_xml(body_xml: str) -> str:
+    sect = (
+        f"<w:sectPr>"
+        f'<w:headerReference w:type="default" r:id="rId3"/>'
+        f'<w:footerReference w:type="default" r:id="rId4"/>'
+        f'<w:pgSz w:w="{PAGE_W}" w:h="{PAGE_H}"/>'
+        f'<w:pgMar w:top="{MARGIN_T}" w:right="{MARGIN_R}" '
+        f'w:bottom="{MARGIN_B}" w:left="{MARGIN_L}" '
+        f'w:header="{HDR_DIST}" w:footer="{FTR_DIST}" w:gutter="0"/>'
+        f'<w:cols w:space="720"/>'
+        f'<w:docGrid w:linePitch="360"/>'
+        f"</w:sectPr>"
+    )
+    return (
+        f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f"<w:document {_NS}>"
+        f"<w:body>{body_xml}{sect}</w:body>"
+        f"</w:document>"
+    )
+
+
+# ──────────────────────────────────────────────────────────────
 # PUBLIC API
-# ---------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────────────
 
 def build_crl_docx(
     title: str,
@@ -436,104 +507,58 @@ def build_crl_docx(
     markdown_body: str,
 ) -> bytes:
     """
-    Build a .docx document with the exact CRL header/footer on every page.
+    Build a complete .docx with CRL header/footer on every page.
 
     Parameters
     ----------
-    title          : SOP title — appears in header Title row and document body
+    title          : SOP title shown in header Title row
     document_id    : e.g. "GLBL-SOP-00060"
     version        : e.g. "6" or "1.0"
     effective_date : e.g. "30/Nov/2024"
-    markdown_body  : formatted Markdown text from formatter_agent
+    markdown_body  : formatted Markdown from formatter_agent
 
     Returns
     -------
-    bytes — the .docx file content, ready to write to disk or upload to S3.
+    bytes — complete .docx file ready to write to disk
     """
-    doc = Document()
+    hdr  = _header_xml(title, document_id, version, effective_date)
+    ftr  = _footer_xml()
+    body = _md_to_body(markdown_body)
+    doc  = _document_xml(body)
 
-    # ── Page layout ─────────────────────────────────────────────────────
-    for section in doc.sections:
-        section.page_width    = _PAGE_WIDTH
-        section.page_height   = _PAGE_HEIGHT
-        section.left_margin   = _MARGIN
-        section.right_margin  = _MARGIN
-        section.top_margin    = Inches(1.5)   # extra room for the header table
-        section.bottom_margin = Inches(1.0)
-        section.header_distance = Inches(0.3)
-        section.footer_distance = Inches(0.3)
-
-        # Link-to-previous = False so our header/footer is independent
-        section.header.is_linked_to_previous = False
-        section.footer.is_linked_to_previous = False
-
-        _build_crl_header(
-            section.header,
-            title=title,
-            document_id=document_id,
-            version=version,
-            effective_date=effective_date,
-        )
-        _build_crl_footer(section.footer)
-
-    # ── Document styles ─────────────────────────────────────────────────
-    doc.styles["Normal"].font.name = "Arial"
-    doc.styles["Normal"].font.size = Pt(10)
-
-    for h_style, pts in [("Heading 1", 14), ("Heading 2", 12), ("Heading 3", 11)]:
-        try:
-            s = doc.styles[h_style]
-            s.font.name = "Arial"
-            s.font.size = Pt(pts)
-            s.font.bold = True
-            s.font.color.rgb = _BLACK
-        except KeyError:
-            pass
-
-    # ── Body content ────────────────────────────────────────────────────
-    _add_body_content(doc, markdown_body)
-
-    # ── Serialise to bytes ──────────────────────────────────────────────
     buf = io.BytesIO()
-    doc.save(buf)
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml",           _CONTENT_TYPES)
+        zf.writestr("_rels/.rels",                   _ROOT_RELS)
+        zf.writestr("word/_rels/document.xml.rels",  _WORD_RELS)
+        zf.writestr("word/document.xml",             doc)
+        zf.writestr("word/header1.xml",              hdr)
+        zf.writestr("word/footer1.xml",              ftr)
+        zf.writestr("word/styles.xml",               _STYLES)
+        zf.writestr("word/settings.xml",             _SETTINGS)
+
     return buf.getvalue()
 
 
-# ---------------------------------------------------------------------------
-# CONVENIENCE: apply to an existing SOPState and write to disk
-# ---------------------------------------------------------------------------
-
 def write_crl_docx_from_state(state, output_path: str) -> str:
-    """
-    Convenience wrapper — pulls all metadata from SOPState and writes .docx.
-
-    Parameters
-    ----------
-    state       : SOPState instance with formatted_markdown, topic, etc.
-    output_path : file path to write the .docx
-
-    Returns
-    -------
-    output_path (str)
-    """
-    from datetime import datetime as _dt
-
-    title          = getattr(state, "topic", "Standard Operating Procedure")
-    formatted_md   = getattr(state, "formatted_markdown", "") or \
-                     getattr(state, "formatted_document", "") or ""
-    # Try to pull doc metadata from state if set by formatter
-    document_id    = getattr(state, "document_id",    None) or \
-                     f"SOP-{_dt.now().strftime('%Y%m%d-%H%M')}"
+    """Convenience wrapper — pulls metadata from SOPState and writes .docx."""
+    title          = getattr(state, "topic",          "Standard Operating Procedure")
+    formatted_md   = (getattr(state, "formatted_markdown", "") or
+                      getattr(state, "formatted_document",  "") or "")
+    document_id    = (getattr(state, "document_id",    None) or
+                      f"SOP-{datetime.now().strftime('%Y%m%d-%H%M')}")
     version        = getattr(state, "sop_version",    "1.0")
-    effective_date = getattr(state, "effective_date", _dt.now().strftime("%d/%b/%Y"))
+    effective_date = getattr(state, "effective_date",
+                             datetime.now().strftime("%d/%b/%Y"))
 
-    docx_bytes = build_crl_docx(
+    data = build_crl_docx(
         title=title,
         document_id=document_id,
         version=version,
         effective_date=effective_date,
         markdown_body=formatted_md,
     )
-    with open(output_path, "wb") as f:
-        f.write(docx_bytes)
+    with open(output_path, "wb") as fh:
+        fh.write(data)
     return output_path
+
