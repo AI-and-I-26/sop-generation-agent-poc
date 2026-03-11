@@ -55,12 +55,55 @@ from src.graph.state_schema import SOPState, WorkflowStatus
 from src.graph.state_store import STATE_STORE
 
 # Import all five agent nodes — each is a Strands Agent instance
+import boto3
+from botocore.config import Config as _BotoCfg
+
 from src.agents.planning_agent  import planning_agent
 from src.agents.research_agent  import research_agent
 from src.agents.content_agent   import content_agent
 from src.agents.formatter_agent import formatter_agent
 from src.agents.qa_agent        import qa_agent
 from src.utils.crl_docx_writer  import build_crl_docx
+
+
+# ---------------------------------------------------------------------------
+# STRANDS TIMEOUT PATCH
+# ---------------------------------------------------------------------------
+# BedrockModel silently ignores client_config (see strands-agents issue #815).
+# The Strands agent loop makes a second .converse() call after each tool call
+# to check if it should continue — this uses the default 120s boto3 timeout
+# and fails for any long-running node.
+# Fix: replace .client on every BedrockModel with a boto3 client that has
+# STRANDS_READ_TIMEOUT (default 600s) applied.
+def _patch_agent_timeout(agent, read_timeout: int = None) -> None:
+    """Replace the BedrockModel's internal boto3 client with a high-timeout one."""
+    import os
+    _to = read_timeout or int(os.getenv("STRANDS_READ_TIMEOUT", "600"))
+    _region = os.getenv("AWS_REGION", "us-east-2")
+    high_timeout_client = boto3.client(
+        "bedrock-runtime",
+        region_name=_region,
+        config=_BotoCfg(
+            read_timeout=_to,
+            connect_timeout=10,
+            retries={"max_attempts": 1, "mode": "standard"},
+        ),
+    )
+    try:
+        model = agent.model  # BedrockModel instance
+        model.client = high_timeout_client
+        logger.info(
+            "Patched BedrockModel.client timeout=%ds on agent '%s'",
+            _to, getattr(agent, 'name', str(agent)),
+        )
+    except Exception as e:
+        logger.warning("Could not patch agent timeout: %s", e)
+
+
+# Patch all 5 node agents at import time
+_STRANDS_READ_TIMEOUT = int(__import__('os').getenv('STRANDS_READ_TIMEOUT', '600'))
+for _agent in [planning_agent, research_agent, content_agent, formatter_agent, qa_agent]:
+    _patch_agent_timeout(_agent, _STRANDS_READ_TIMEOUT)
 
 logger = logging.getLogger(__name__)
 
@@ -250,23 +293,20 @@ async def generate_sop(
             )
 
         # ── Generate CRL-style .docx with per-page header/footer ─────────
-        # Always attempt docx generation if we have any formatted content,
-        # regardless of QA approval — lets teams review even draft outputs.
         _formatted_md = (
             getattr(final_state, "formatted_markdown", None) or
             getattr(final_state, "formatted_document", None) or ""
         )
         if _formatted_md:
             try:
-                import os, datetime as _dt
-                _title    = (
+                import os as _os, datetime as _dt
+                _title = (
                     (final_state.outline.title if getattr(final_state, "outline", None) else None)
                     or final_state.topic
                 )
                 _doc_id   = getattr(final_state, "document_id",    None) or f"SOP-{_dt.datetime.now().strftime('%Y%m%d-%H%M')}"
                 _version  = getattr(final_state, "sop_version",    "1.0")
                 _eff_date = getattr(final_state, "effective_date",  _dt.datetime.now().strftime("%d/%b/%Y"))
-
                 _docx_bytes = build_crl_docx(
                     title=_title,
                     document_id=_doc_id,
@@ -274,22 +314,17 @@ async def generate_sop(
                     effective_date=_eff_date,
                     markdown_body=_formatted_md,
                 )
-
-                # Write to outputs folder — safe filename derived from topic
                 _safe_name = "".join(
                     c if c.isalnum() or c in (" ", "-", "_") else "_"
                     for c in final_state.topic
                 ).strip().replace(" ", "_")[:60]
-                _out_dir  = os.getenv("SOP_OUTPUT_DIR", "outputs")
-                os.makedirs(_out_dir, exist_ok=True)
-                _out_path = os.path.join(_out_dir, f"{_safe_name}_{workflow_id[-8:]}.docx")
-
+                _out_dir  = _os.getenv("SOP_OUTPUT_DIR", "outputs")
+                _os.makedirs(_out_dir, exist_ok=True)
+                _out_path = _os.path.join(_out_dir, f"{_safe_name}_{workflow_id[-8:]}.docx")
                 with open(_out_path, "wb") as _f:
                     _f.write(_docx_bytes)
-
                 final_state.docx_path = _out_path
                 logger.info("CRL .docx written — %d bytes | path=%s", len(_docx_bytes), _out_path)
-
             except Exception as _docx_err:
                 logger.warning("CRL .docx generation failed (non-fatal): %s", _docx_err, exc_info=True)
         else:
