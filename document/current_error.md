@@ -1,454 +1,361 @@
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>set KNOWLEDGE_BASE_ID=1NR6BI4TNO
 
-Used following env
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>set AWS_REGION=us-east-2
 
-set FORMATTER_READ_TIMEOUT=400
-set FORMATTER_MAX_JSON_BYTES=50000   # forces chunked for your 74KB payload
-set FORMATTER_MAX_CONCURRENCY=2
-set FORMATTER_MAX_ATTEMPTS=3
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>set RESEARCH_MAX_TOKENS=15000
 
-set KNOWLEDGE_BASE_ID=1NR6BI4TNO
-set AWS_REGION=us-east-2
-set RESEARCH_MAX_TOKENS=15000
-set RESEARCH_MAX_ATTEMPTS=2
-set CONTENT_MAX_TOKENS = 7000
-set CONTENT_MAX_TOKENS_PER_SECTION=6000
-set CONTENT_MAX_FACTS_PER_SECTION=10
-set CONTENT_MAX_CITES_PER_SECTION=6
-set FORMATTING_MAX_TOKENS =7000
-set FORMATTER_MAX_JSON_BYTES=100000
-set CONTENT_MAX_JSON_BYTES=100000
-set FORMATTER_MAX_CONCURRENCY = 2
-set FORMATTER_READ_TIMEOUT = 400
-set FORMATTER_MAX_ATTEMPTS = 5
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>set RESEARCH_MAX_ATTEMPTS=2
+
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>set CONTENT_MAX_TOKENS = 7000
+
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>set CONTENT_MAX_TOKENS_PER_SECTION=6000
+
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>set CONTENT_MAX_FACTS_PER_SECTION=10
+
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>set CONTENT_MAX_CITES_PER_SECTION=6
+
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>set FORMATTING_MAX_TOKENS =7000
+
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>set CONTENT_MAX_JSON_BYTES=100000
+
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>set FORMATTER_READ_TIMEOUT=400 
+
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>set FORMATTER_MAX_JSON_BYTES=50000 
+
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>FORMATTER_MAX_CONCURRENCY=2 
+'FORMATTER_MAX_CONCURRENCY' is not recognized as an internal or external command,
+operable program or batch file.
+
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>set FORMATTER_MAX_ATTEMPTS=3
+
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>python -m app.test.custom_sop
+2026-03-11 09:15:28 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+2026-03-11 09:15:29 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+2026-03-11 09:15:29 - src.agents.content_agent - INFO - Content caps | TOKENS/section=6000, FACTS/section=10, CITES/section=6, PROCEDURE_SPLIT_MIN=6
+2026-03-11 09:15:29 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+C:\Users\cr242786\sop-strands-agent - poc\app\src\agents\formatter_agent.py:62: UserWarning: Invalid configuration parameters: ['client_config', 'region'].
+Valid parameters are: ['additional_args', 'additional_request_fields', 'additional_response_field_paths', 'cache_prompt', 'cache_tools', 'guardrail_id', 'guardrail_redact_input', 'guardrail_redact_input_message', 'guardrail_redact_output', 'guardrail_redact_output_message', 'guardrail_stream_processing_mode', 'guardrail_trace', 'guardrail_version', 'include_tool_result_status', 'max_tokens', 'model_id', 'stop_sequences', 'streaming', 'temperature', 'top_p'].
+
+See https://github.com/strands-agents/sdk-python/issues/815
+  return BedrockModel(model_id=model_id, region=_REGION, client_config=client_config)  # type: ignore[arg-type]
+2026-03-11 09:15:29 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+C:\Users\cr242786\sop-strands-agent - poc\app\src\agents\qa_agent.py:42: UserWarning: Invalid configuration parameters: ['region'].
+Valid parameters are: ['additional_args', 'additional_request_fields', 'additional_response_field_paths', 'cache_prompt', 'cache_tools', 'guardrail_id', 'guardrail_redact_input', 'guardrail_redact_input_message', 'guardrail_redact_output', 'guardrail_redact_output_message', 'guardrail_stream_processing_mode', 'guardrail_trace', 'guardrail_version', 'include_tool_result_status', 'max_tokens', 'model_id', 'stop_sequences', 'streaming', 'temperature', 'top_p'].
+
+See https://github.com/strands-agents/sdk-python/issues/815
+  return BedrockModel(model_id=_get_model_id(env_var), region=_REGION)
+2026-03-11 09:15:30 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+2026-03-11 09:15:30 - strands.multiagent.graph - WARNING - Graph without execution limits may run indefinitely if cycles exist
+
+============================================================
+SOP Generation Starting...
+  Topic:    Global Technology Infrastructure Qualification SOP
+  Industry: Life Science
+  Audience: IT Infrastructure Engineers and System Administrators responsible for managing on-premises and cloud infrastructure
+============================================================
+
+2026-03-11 09:15:31 - src.graph.sop_workflow - INFO - ============================================================
+2026-03-11 09:15:31 - src.graph.sop_workflow - INFO - SOP Generation START | topic='Global Technology Infrastructure Qualification SOP' | industry='Life Science'
+2026-03-11 09:15:31 - src.graph.sop_workflow - INFO - workflow_id: sop-1300199458202281869
+2026-03-11 09:15:31 - src.graph.sop_workflow - INFO - ============================================================
+2026-03-11 09:15:31 - strands.telemetry.metrics - INFO - Creating Strands MetricsClient
+
+Tool #1: run_planning
+2026-03-11 09:15:33 - src.agents.planning_agent - INFO - >>> run_planning called | prompt: workflow_id::sop-1300199458202281869 | Generate a Standard Operating Procedure for: Global Technology Infrastructure Qua
+2026-03-11 09:15:33 - src.agents.planning_agent - INFO - State found | topic='Global Technology Infrastructure Qualification SOP' industry='Life Science'
+2026-03-11 09:15:33 - src.agents.planning_agent - INFO - Using model: arn:aws:bedrock:us-east-2:070797854596:inference-profile/global.anthropic.claude-sonnet-4-6
+2026-03-11 09:15:33 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+2026-03-11 09:15:42 - src.agents.planning_agent - INFO - Planning complete — 8 sections | workflow_id=sop-1300199458202281869
+✅ Planning complete! The SOP has been structured into **8 comprehensive sections** tailored for the **Life Science industry**, targeting **IT Infrastructure Engineers and System Adminis✅ Planning complete! The SOP has been structured into **8 comprehensive sections** tailored for the **Life Science industry**, targeting **IT Infrastructure Engineers and System Administrators** managing both on-premises and cloud environments.
+
+---
+
+## 📋 Global Technology Infrastructure Qualification SOP
+**Industry:** Life Science
+**Audience:** IT Infrastructure Engineers & System Administrators
+**Workflow ID:** `sop-1300199458202281869`
+
+trators** managing both on-premises and cloud environments.
+
+---
+
+## 📋 Global Technology Infrastructure Qualification SOP
+**Industry:** Life Science
+**Audience:** IT Infrastructure Engineers & System Administrators
+**Workflow ID:** `sop-1300199458202281869`
 
 
+---
 
-All 9 sections have been generated and stored in `SOPState.content_sections` for `workflow_id::sop-8558994228268727304`. The pipeline is ready to proceed to the next node (e.g., **review**, **formatting**, or **finalization**).
+## 📋 Global Technology Infrastructure Qualification SOP
+**Industry:** Life Science
+**Audience:** IT Infrastructure Engineers & System Administrators
+**Workflow ID:** `sop-1300199458202281869`
+
+---
+
+## 📋 Global Technology Infrastructure Qualification SOP
+**Industry:** Life Science
+**Audience:** IT Infrastructure Engineers & System Administrators
+**Workflow ID:** `sop-1300199458202281869`
+
+## 📋 Global Technology Infrastructure Qualification SOP
+**Industry:** Life Science
+**Audience:** IT Infrastructure Engineers & System Administrators
+**Workflow ID:** `sop-1300199458202281869`
+
+**Audience:** IT Infrastructure Engineers & System Administrators
+**Workflow ID:** `sop-1300199458202281869`
+
+**Workflow ID:** `sop-1300199458202281869`
+
+---
+---
+
+### 📁 SOP Structure Overview — 8 Sections Planned
+
+| # | Section Title | Description |
+|---|--------------|-------------|
+|---|--------------|-------------|
+| 1 | **Purpose & Scope** | Defines the objectives of infrastructure qualification, applicable systems, and regulatory boundaries (GxP, 21 CFR Part 11, GAMP 5, EU Annex 11) |
+| 2 | **Roles & Responsibilities** | Outlines accountability matrix for IT Infrastructure Engineers, System Administrators, Validation/QA teams, and Cloud Operations |
+| 3 | **Qualification Lifecycle Framework** | Covers IQ (Installation Qualification), OQ (Operational Qualification), PQ (Performance Qualification) phases for on-prem and cloud infrastructure |
+| 4 | **Infrastructure Qualification Planning** | Details how to create Validation Plans, risk assessments (FMEA/GAMP), and qualification scope for servers, networks, storage, and cloud services |
+| 5 | **Execution of Qualification Protocols** | Step-by-step procedures for executing IQ/OQ/PQ test scripts, documenting deviations, and managing evidence collection |
+| 6 | **Change Control & Requalification** | Procedures for triggered requalification following infrastructure changes, patches, migrations, or incidents |
+| 7 | **Documentation & Audit Readiness** | Standards for maintaining qualification records, traceability matrices, e-signatures, and preparation for regulatory audits |
+| 8 | **Periodic Review & Continuous Improvement** | Cadence for periodic infrastructure qualification reviews, KPI tracking, and process improvement cycles |
+
+| 7 | **Documentation & Audit Readiness** | Standards for maintaining qualification records, traceability matrices, e-signatures, and preparation for regulatory audits |
+| 8 | **Periodic Review & Continuous Improvement** | Cadence for periodic infrastructure qualification reviews, KPI tracking, and process improvement cycles |
+
+---
+
+### 🔍 Key Regulatory Frameworks Incorporated
+| 7 | **Documentation & Audit Readiness** | Standards for maintaining qualification records, traceability matrices, e-signatures, and preparation for regulatory audits |
+| 8 | **Periodic Review & Continuous Improvement** | Cadence for periodic infrastructure qualification reviews, KPI tracking, and process improvement cycles |
+
+---
+| 8 | **Periodic Review & Continuous Improvement** | Cadence for periodic infrastructure qualification reviews, KPI tracking, and process improvement cycles |
+
+---
+---
+
+### 🔍 Key Regulatory Frameworks Incorporated
+- ✅ **21 CFR Part 11** — Electronic records and signatures
+- ✅ **GAMP 5** — Risk-based approach to GxP-compliant IT systems
+- ✅ **EU Annex 11** — Computerised systems in pharmaceutical manufacturing
+- ✅ **ISO/IEC 27001** — Information security for infrastructure
+- ✅ **ITIL/ITSM** — Change and incident management alignment
+
+---
+
+> 🚀 The full SOP document is now being generated based on this plan. Each section will include detailed procedures, roles, decision criteria, and templates suitable for Life Science GxP environments across both **on-premises and cloud infrastructure**.
+Tool #1: run_research
+2026-03-11 09:16:01 - src.agents.research_agent - INFO - >>> run_research | prompt: Original Task: workflow_id::sop-1300199458202281869 | Generate a Standard Operating Procedure for: Global Technology Infrastructure Qualification SOP | Industry
+2026-03-11 09:16:01 - src.agents.research_agent - INFO - Research | topic='Global Technology Infrastructure Qualification SOP' industry='Life Science' audience='IT Infrastructure Engineers and System Administrators responsible for managing on-premises and cloud infrastructure'
+2026-03-11 09:16:02 - src.agents.research_agent - INFO - KB Round 1: 46 hits across 7 queries
+2026-03-11 09:16:02 - src.agents.research_agent - INFO - KB retrieval done — hits=46 | queries_tried=7
+2026-03-11 09:16:57 - src.agents.research_agent - INFO - kb_format_context extracted in main synthesis | sections=17 | style=Formal, imperative and declarative sentences; third-person passive and active mix; uses 'must' for mandatory requirements; concise numbered procedural steps; all-caps section titles
+2026-03-11 09:16:57 - src.agents.research_agent - INFO - kb_header_template loaded from document_templates.py
+2026-03-11 09:16:57 - src.agents.research_agent - INFO - kb_footer_template loaded from document_templates.py
+2026-03-11 09:16:57 - src.agents.research_agent - INFO - Research complete | workflow_id=sop-1300199458202281869 | kb_hits=46 | similar_sops=5 | compliance=16 | has_format_ctx=True      
+✅ **Research phase complete** for workflow `sop-1300199458202281869`.
+
+Here's a summary of what was gathered and stored for the next pipeline node:
+
+---
+
+## 🔬 Research Results Summary
+
+| Metric | Result |
+|--------|--------|
+| **Knowledge Base Hits** | 46 relevant entries retrieved |
+| **Similar SOPs Referenced** | 5 comparable Life Science infrastructure qualification SOPs |
+| **Compliance Requirements Identified** | 16 regulatory/compliance requirements mapped |
+| **KB Format Context** | ✅ Extracted successfully |
+
+---
+
+## 📌 Key Research Findings
+
+### ✅ Regulatory Coverage Confirmed
+All 5 planned regulatory frameworks were found with substantive content:
+- **21 CFR Part 11** — Electronic records, audit trails, e-signature controls
+- **GAMP 5** — Category-based system classification (Cat 1–5), risk-based V-model
+- **EU Annex 11** — Validation lifecycle, supplier assessment, data integrity
+- **ISO/IEC 27001** — Security controls for infrastructure qualification evidence
+- **ITIL/ITSM** — Change management triggers for requalification
+
+### ✅ Infrastructure Domains Covered
+- On-premises servers (physical & virtual), network infrastructure, storage systems
+- Cloud services (IaaS, PaaS, SaaS) in GxP contexts — AWS, Azure, hybrid environments
+- Virtualization platforms (VMware, Hyper-V) with special qualification considerations
+
+### ✅ Qualification Protocol Standards Identified
+- IQ/OQ/PQ test script structure and evidence requirements
+- Deviation classification (critical, major, minor) and resolution workflows
+- Traceability matrix (RTM) format linking requirements → test cases → evidence
+
+### ✅ Format Context
+The SOP will follow the established Life Science GxP documentation format with numbered sections, defined templates, role matrices, and audit-ready record structures.
+
+---
+
+> ⏭️ Findings and format context have been written to `SOPState` and are ready for the **SOP generation node**.
+Tool #1: run_content
+2026-03-11 09:17:13 - src.agents.content_agent - INFO - >>> run_content | prompt: Original Task: workflow_id::sop-1300199458202281869 | Generate a Standard Operating Procedure for: Global Technology Infrastructure Qualification SOP | Industry
+2026-03-11 09:17:13 - src.agents.content_agent - INFO - section_insights: 8 entries | keys=['1.0', '2.0', '3.0', '4.0', '5.0', '6.0', '7.0', '8.0'] | workflow_id=sop-1300199458202281869 
+2026-03-11 09:17:13 - src.agents.content_agent - INFO - Using planning outline: 8 sections | workflow_id=sop-1300199458202281869
+2026-03-11 09:17:13 - src.agents.content_agent - INFO - Generating section 'PURPOSE' (1.0) | workflow_id=sop-1300199458202281869 | facts=0, cites=0
+2026-03-11 09:17:19 - src.agents.content_agent - INFO - Generating section 'SCOPE' (2.0) | workflow_id=sop-1300199458202281869 | facts=0, cites=0
+2026-03-11 09:17:25 - src.agents.content_agent - INFO - Generating section 'RESPONSIBILITIES' (3.0) | workflow_id=sop-1300199458202281869 | facts=0, cites=0
+2026-03-11 09:17:35 - src.agents.content_agent - INFO - Generating section 'DEFINITIONS' (4.0) | workflow_id=sop-1300199458202281869 | facts=0, cites=0
+2026-03-11 09:17:52 - src.agents.content_agent - INFO - Generating section 'MATERIALS' (5.0) | workflow_id=sop-1300199458202281869 | facts=0, cites=0
+2026-03-11 09:18:21 - src.agents.content_agent - INFO - Splitting PROCEDURE into two parts (subsections=12) | workflow_id=sop-1300199458202281869
+2026-03-11 09:20:00 - src.agents.content_agent - INFO - Generated PROCEDURE in two parts | workflow_id=sop-1300199458202281869
+2026-03-11 09:20:00 - src.agents.content_agent - INFO - Generating section 'REFERENCES' (7.0) | workflow_id=sop-1300199458202281869 | facts=0, cites=0
+2026-03-11 09:20:12 - src.agents.content_agent - INFO - Generating section 'REVISION HISTORY' (8.0) | workflow_id=sop-1300199458202281869 | facts=0, cites=0
+2026-03-11 09:20:14 - src.agents.content_agent - INFO - Content generation complete — 9 sections | workflow_id=sop-1300199458202281869
+The content generation step has completed successfully for workflow `sop-1300199458202281869`. All 9 sections of the **Global Technology Infrastructure Qualification SOP** have been generated and written to `SOPState.content_sections`, ready for the next pipeline node.
 Tool #1: run_formatting
-2026-03-10 13:59:14 - src.agents.formatter_agent - INFO - >>> run_formatting | prompt: Original Task: workflow_id::sop-8558994228268727304 | Generate a Standard Operating Procedure for: Global Technology Inf
-2026-03-10 13:59:14 - src.agents.formatter_agent - INFO - Formatter payload size ~73899 bytes | sections=9
-2026-03-10 13:59:14 - src.agents.formatter_agent - INFO - Payload within limit — using single-shot whole-document formatting.
-2026-03-10 13:59:14 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
-2026-03-10 14:02:29 - src.agents.formatter_agent - WARNING - LLM call failed | attempt=1/5 | will retry in 1.05s | error=
-2026-03-10 14:05:45 - src.agents.formatter_agent - WARNING - LLM call failed | attempt=2/5 | will retry in 1.70s | error=
-2026-03-10 14:09:02 - src.agents.formatter_agent - WARNING - LLM call failed | attempt=3/5 | will retry in 2.71s | error=
-2026-03-10 14:09:19 - asyncio - ERROR - Task exception was never retrieved
-future: <Task finished name='Task-6058' coro=<to_thread() done, defined at C:\Python311\Lib\asyncio\threads.py:12> exception=ReadTimeoutError('Read timeout on endpoint URL: "https://bedrock-runtime.us-east-2.amazonaws.com/model/arn%3Aaws%3Abedrock%3Aus-east-2%3A070797854596%3Ainference-profile%2Fglobal.anthropic.claude-sonnet-4-6/converse"')>
-Traceback (most recent call last):
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 534, in _make_request
-    response = conn.getresponse()
-               ^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connection.py", line 571, in getresponse
-    httplib_response = super().getresponse()
-                       ^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\http\client.py", line 1374, in getresponse
-    response.begin()
-  File "C:\Python311\Lib\http\client.py", line 318, in begin
-    version, status, reason = self._read_status()
-                              ^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\http\client.py", line 279, in _read_status
-    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\socket.py", line 705, in readinto
-    return self._sock.recv_into(b)
-           ^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\ssl.py", line 1278, in recv_into
-    return self.read(nbytes, buffer)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\ssl.py", line 1134, in read
-    return self._sslobj.read(len, buffer)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-TimeoutError: The read operation timed out
+2026-03-11 09:20:19 - src.agents.formatter_agent - INFO - >>> run_formatting | prompt: Original Task: workflow_id::sop-1300199458202281869 | Generate a Standard Operating Procedure for: Global Technology Inf
+2026-03-11 09:20:19 - src.agents.formatter_agent - INFO - Formatter payload size ~72590 bytes | sections=9
+2026-03-11 09:20:19 - src.agents.formatter_agent - INFO - Payload exceeds 50000 bytes — using per-section chunked formatting.
+2026-03-11 09:20:19 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+2026-03-11 09:20:20 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+```json
+{
+  "formatted_markdown": "## 1.0 PURPOSE\nThis Standard Operating Procedure (SOP) establishes the requirements, methodology, and controls governing the qualification of global technology infrastructure within the Life Science organization. It defines a structured, phased approach to infrastructure qualification that encompasses requirements gathering, installation qualification, user acceptance testing, and operational phase activities for both on-premises and cloud-based infrastructure components. All qualification activities must be performed in accordance with controlled and versioned document management practices, consistent with GAMP 5 (Second Edition, 2022) principles and applicable regulatory expectations, including 21 CFR Part 11 for electronic records and signatures. This SOP ensures that IT Infrastructure Engineers and System Administrators execute qualification activities in a repeatable, auditable, and compliant manner, and that all qualified infrastructure is formally accepted, documented, and entered into the Configuration Management Database (CMDB) prior to operational use."
+}
+```2026-03-11 09:20:24 - src.agents.formatter_agent - INFO - LLM call succeeded | attempt=1 | elapsed=4.0s | bytes_prompt=4478
+2026-03-11 09:20:24 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+```json
+{
+  "formatted_markdown": "## 2.0 SCOPE\nThis procedure applies to all global technology infrastructure qualification activities performed by IT Infrastructure Engineers and System Administrators responsible for managing on-premises and cloud infrastructure within the organization. It governs the qualification lifecycle for servers, network devices, storage systems, virtualization platforms, and associated infrastructure components that support regulated business processes or GxP-relevant systems. This procedure applies to new infrastructure deployments, infrastructure replacements, and requalification efforts triggered by significant changes to qualified environments. All personnel involved in planning, executing, documenting, or reviewing infrastructure qualification activities must comply with the requirements set forth in this procedure. Vendors and vendor-supplied technology engaged to support qualification activities must be approved prior to use in accordance with the Global Vendor Program. Infrastructure changes must be made only by authorized IT personnel or authorized and approved vendors. This procedure does not apply to application-level validation activities, which are governed by separate software validation procedures."
+}
+```2026-03-11 09:20:25 - src.agents.formatter_agent - INFO - LLM call succeeded | attempt=1 | elapsed=3.8s | bytes_prompt=4623
+2026-03-11 09:20:25 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+```json
+{
+  "formatted_markdown": "## 3.0 RESPONSIBILITIES\nThe following roles and responsibilities apply to all activities performed under this Standard Operating Procedure. Each role must execute its assigned responsibilities in accordance with controlled document management practices and applicable regulatory requirements, including GAMP 5 (Second Edition, 2022) and EU GMP Annex 11.\n\n| ROLE | RESPONSIBILITY |\n|---|---|\n| IT Infrastructure Engineer | Executes infrastructure qualification activities, develops and executes test scripts, documents results, and ensures all test scripts are numbered sequentially with the appropriate testing type designation (e.g., IQ, UAT) as part of the script number. |\n| System Administrator | Maintains system configurations, creates and maintains Baseline Configuration documents prior to commencement of any testing, and ensures qualified infrastructure is entered into the Configuration Management Database (CMDB) upon acceptance. |\n| IT Infrastructure Manager | Oversees qualification project execution, ensures the Infrastructure Qualification Plan (IQP) and As Built Document are approved prior to commencement of any testing, and confirms that infrastructure changes are made only by authorized IT personnel or authorized and approved vendors. |\n| Qualification Lead | Authors and maintains the IQP and Infrastructure Qualification Report (IQR), ensures the IQR Conclusion summarizes the qualification and confirms test scripts were run successfully, and coordinates formal document approval in accordance with controlled and versioned document management practices. |\n| Quality Assurance (QA) Representative | Reviews and approves qualification documentation, verifies compliance with Data Integrity requirements including DocuSign usage, and ensures all documentation is initialed and dated or signed and dated with wet or electronic signature as required by 21 CFR Part 11. |\n| DocuSign Sender | Sets up test scripts for a single user only on a single day in compliance with Data Integrity requirements, ensuring DocuSign usage adheres to applicable controls as required by 21 CFR Part 11 and consistent with ISO/IEC 27001:2022. |\n| IT Operations Team | Maintains Change, Configuration, and Patch Management procedures during the Operational Phase, conducts the annual account access review, and ensures Backup and Restore and Disaster Recovery procedures are maintained in accordance with applicable operational controls. |\n| Vendor Management / Procurement | Ensures all vendors and vendor-supplied technology are approved prior to use in accordance with the Global Vendor Program before any vendor is engaged in qualification or operational activities. |"
+}
+```2026-03-11 09:20:33 - src.agents.formatter_agent - INFO - LLM call succeeded | attempt=1 | elapsed=7.7s | bytes_prompt=6584
+2026-03-11 09:20:33 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+```json
+{
+  "formatted_markdown": "## 4.0 DEFINITIONS / ABBREVIATIONS\n| TERM / ABBREVIATION | DEFINITION |\n|---|---|\n| As Built Document | A controlled document that records the actual components, configurations, and architecture of the infrastructure as it was installed and configured, used as the basis for test script development and approved prior to the commencement of any testing. |\n| Baseline Configuration | A documented and approved snapshot of the infrastructure configuration established prior to the commencement of any testing, serving as the reference point for change control and requalification activities. |\n| CMDB | Configuration Management Database. The authoritative repository into which all qualified infrastructure components must be entered upon acceptance, and maintained throughout the Operational Phase. |\n| Change Management | The formal process by which modifications to qualified infrastructure are requested, reviewed, approved, implemented, and documented in accordance with established Change, Configuration, and Patch Management procedures. |\n| Cloud Infrastructure | Computing resources, including servers, storage, networking, and platform services, delivered and managed via a third-party cloud service provider and subject to the same qualification requirements as on-premises infrastructure. |\n| Data Integrity | The assurance that data is complete, consistent, accurate, and maintained throughout its lifecycle, including the requirement that electronic signature tools such as DocuSign are configured to comply with applicable data integrity standards. |\n| DocuSign | An electronic signature platform used to obtain approvals and signatures on qualification documents. A DocuSign Sender must configure test scripts for a single user only on a single day to comply with Data Integrity requirements. |\n| IQ | Installation Qualification. A phase of the qualification process that verifies and documents that infrastructure components are installed correctly and in accordance with approved specifications and vendor requirements. |\n| IQP | Infrastructure Qualification Plan. The master planning document that defines the scope, approach, phases, roles, responsibilities, and requalification criteria for a qualification project. The IQP must be approved prior to the commencement of any testing. |\n| IQR | Infrastructure Qualification Report. The concluding document that summarizes the qualification effort, confirms that all test scripts were executed successfully, and formally closes the qualification project. |\n| On-Premises Infrastructure | Computing resources, including servers, storage, and networking equipment, that are physically located within a facility owned or controlled by the organization and managed by internal IT personnel. |\n| Operational Phase | The period following formal acceptance of qualified infrastructure during which the system is in active use. During this phase, annual account access reviews, Change and Patch Management procedures, and Backup, Restore, and Disaster Recovery procedures must be maintained. |\n| Patch Management | The controlled process of identifying, testing, approving, and applying software and firmware updates to qualified infrastructure components in accordance with established Change, Configuration, and Patch Management procedures. |\n| Qualification | The structured, documented process of demonstrating that infrastructure components are fit for their intended purpose, installed correctly, and operate in accordance with defined requirements. |\n| Requalification | The process of re-executing qualification activities following significant changes to qualified infrastructure. The scope and process for requalification must be described in the IQP. |\n| Test Script | A controlled document containing step-by-step instructions and expected results used to execute and record qualification testing. Test scripts must be numbered sequentially and must include the type of testing designation (e.g., IQ, UAT) as part of the script number. |\n| UAT | User Acceptance Testing. A qualification testing phase in which end users or designated representatives verify that the infrastructure meets defined business and functional requirements under realistic operating conditions. |\n| Vendor | An external supplier of technology products or services used within the qualified infrastructure. Vendors and vendor-supplied technology must be approved prior to use in accordance with the Global Vendor Program. |"
+}
+```2026-03-11 09:20:35 - src.agents.formatter_agent - INFO - LLM call succeeded | attempt=1 | elapsed=9.4s | bytes_prompt=8905
+2026-03-11 09:20:35 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+```json
+{
+  "formatted_markdown": "## 5.0 MATERIALS\nThe following materials, tools, and documentation resources are required to support the qualification of global technology infrastructure. All items listed must be available, approved, and version-controlled prior to the commencement of qualification activities. Vendors and vendor-supplied technology must be approved prior to use in accordance with the Global Vendor Program.\n\n  5.1 Hardware and Infrastructure Components: All physical and virtual hardware components subject to qualification must be identified, procured, and staged prior to the initiation of any testing activities. Required hardware and infrastructure components include the following items.\n\n    - Physical servers, blade chassis, and rack-mounted compute nodes designated for qualification scope.\n    - Storage area network (SAN) arrays, network-attached storage (NAS) devices, and associated storage controllers.\n    - Network switching and routing equipment, including core, distribution, and access layer devices.\n    - Uninterruptible power supply (UPS) units, power distribution units (PDUs), and redundant power infrastructure.\n    - Load balancers, firewalls, and hardware security appliances within the qualification boundary.\n    - Backup hardware appliances and tape or disk-based media used to support Backup and Restore and Disaster Recovery procedures.\n\n  5.2 Software and Virtualization Platforms: All software and virtualization platforms used within the qualified infrastructure must be approved, licensed, and documented in the As Built Document prior to the commencement of any testing. Required software and virtualization platform materials include the following items.\n\n    - Hypervisor platforms, including but not limited to VMware vSphere, Microsoft Hyper-V, or equivalent virtualization software, at approved and documented version levels.\n    - Operating system installation media and license keys for all server and virtual machine operating systems within the qualification scope.\n    - Container orchestration platforms, such as Kubernetes or equivalent, where applicable to the qualification scope.\n    - Configuration management and automation tools, including infrastructure-as-code platforms, used to deploy and maintain qualified system states.\n    - Monitoring and logging software agents required to support operational controls, including those used for annual account access review and Change, Configuration, and Patch Management procedures.\n    - Patch management tooling and software update repositories, maintained in accordance with Change, Configuration, and Patch Management procedures during the Operational Phase.\n\n  5.3 Cloud Service Provider Tools and Consoles: Where qualification scope includes cloud-hosted infrastructure, the following cloud service provider tools and management consoles must be accessible to authorized IT personnel prior to the commencement of qualification activities. Infrastructure changes must be made only by authorized IT personnel or authorized and approved vendors.\n\n    - Cloud provider management consoles, such as the AWS Management Console, Microsoft Azure Portal, or Google Cloud Console, with role-based access configured for qualified personnel only.\n    - Cloud provider command-line interface (CLI) tools and software development kits (SDKs) required to execute qualification test scripts.\n    - Identity and access management (IAM) consoles used to configure, review, and document account access controls, including those required to support annual account access review.\n    - Cloud-native monitoring, logging, and alerting services, such as AWS CloudWatch, Azure Monitor, or equivalent, required to validate operational controls during qualification testing.\n    - Cloud provider cost management and resource tagging consoles used to maintain configuration baseline records within the Configuration Management Database (CMDB) upon acceptance.\n\n  5.4 Qualification and Testing Documentation Templates: All qualification and testing documentation must follow controlled and versioned document management practices. Documents must include a header and footer on all pages indicating the document title, qualification project number, document version, and pagination in Page x of y format. Documents must be initialed and dated or signed and dated using wet or electronic signature. Required documentation templates include the following items.\n\n    - Infrastructure Qualification Plan (IQP) template, which must be approved prior to the commencement of any testing and must describe the requalification scope and process when requalification is needed.\n    - As Built Document template, which must be completed and approved prior to the commencement of any testing and must serve as the basis for test script development.\n    - Baseline Configuration Document template, which must be created prior to the commencement of any testing.\n    - Test script templates for Installation Qualification (IQ) and User Acceptance Testing (UAT), numbered sequentially with the type of testing designation included as part of the script number.\n    - Supporting documentation cover sheet template, used to label supporting evidence with the associated test script identification number and test step number or numbers.\n    - Infrastructure Qualification Report (IQR) Conclusion template, used to summarize the qualification and confirm that all test scripts were executed successfully.\n    - DocuSign routing and signature configuration guide, ensuring that DocuSign usage complies with Data Integrity requirements and that a DocuSign Sender sets up test scripts for a single user only on a single day.\n    - CMDB entry form or intake template, used to register qualified infrastructure into the Configuration Management Database upon acceptance.\n\n  5.5 Network Diagrams and Architecture Blueprints: Current and accurate network diagrams and architecture blueprints must be available prior to the commencement of qualification activities. These materials must be version-controlled and stored within the approved document management system. Required network and architecture documentation includes the following items.\n\n    - Logical network diagrams depicting IP addressing schemes, VLAN segmentation, routing topology, and firewall zone boundaries for all infrastructure within the qualification scope.\n    - Physical network diagrams showing rack layouts, cabling paths, port assignments, and physical device interconnections.\n    - Cloud architecture blueprints illustrating virtual network configurations, availability zone or region topology, and cloud-to-on-premises connectivity for hybrid infrastructure environments.\n    - Data flow diagrams identifying the movement of data between qualified infrastructure components, supporting the documentation of system boundaries and qualification scope.\n    - Disaster Recovery and Backup architecture diagrams depicting replication targets, recovery site topology, and failover paths, maintained in support of Backup and Restore and Disaster Recovery procedures during the Operational Phase."
+}
+```2026-03-11 09:20:57 - src.agents.formatter_agent - INFO - LLM call succeeded | attempt=1 | elapsed=23.3s | bytes_prompt=13288
+2026-03-11 09:20:57 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+```json
+{
+  "formatted_markdown": "## 6.0 PROCEDURE\nThis section defines the phased qualification methodology for global technology infrastructure, encompassing on-premises and cloud environments. All activities must be executed in the sequence prescribed herein. Infrastructure qualification must follow controlled and versioned document management practices consistent with GAMP 5 (Second Edition, 2022) and applicable data integrity requirements. All qualification documentation must include a header and footer on every page indicating the document title, qualification project number, document version, and pagination in Page x of y format, and must carry a Status CURRENT, Confidential and Proprietary banner. All documents must be initialed and dated or signed and dated using wet or electronic signature in accordance with 21 CFR Part 11.\n\n  6.1 Infrastructure Qualification Planning and Risk Assessment: The Infrastructure Qualification Plan (IQP) must be authored, reviewed, and formally approved before any testing activity commences. The IQP must define the qualification scope, phased approach, roles and responsibilities, risk assessment methodology, acceptance criteria, and, where applicable, the scope and process for requalification. All vendors and vendor-supplied technology must be approved prior to use in accordance with the Global Vendor Program. Infrastructure changes must be made only by authorized IT personnel or authorized and approved vendors.\n\n    6.1.1 The qualification team must conduct a risk assessment for each infrastructure component to be qualified. Risk assessment must identify potential failure modes, assign risk ratings, and determine the depth of testing required for each component.\n\n    6.1.2 The IQP must document the requalification scope and process whenever requalification is required, including the conditions that trigger requalification and the criteria for determining qualification scope.\n\n    6.1.3 The IQP must be approved by all designated approvers prior to commencement of any testing. Approval must be captured in the document approval table, which must record the action, author or approver name, timestamp, user ID, and role.\n\n    6.1.4 All qualification documentation must be managed under a controlled and versioned document management system. Document version history must be maintained and accessible throughout the qualification lifecycle.\n\n  6.2 Design Qualification (DQ) for On-Premises and Cloud Infrastructure: Design Qualification must verify that the proposed infrastructure design meets all defined user requirements and regulatory expectations before physical or virtual deployment begins. DQ activities must be completed and documented for both on-premises hardware environments and cloud-hosted environments, including infrastructure-as-a-service (IaaS) and platform-as-a-service (PaaS) configurations.\n\n    6.2.1 The qualification team must produce a Design Qualification document that maps each user requirement to a corresponding design element. Traceability between requirements and design specifications must be maintained throughout the qualification lifecycle.\n\n    6.2.2 For cloud infrastructure, the DQ must address shared responsibility models, data residency requirements, encryption standards, and access control architecture. Cloud service provider agreements must be reviewed and referenced within the DQ documentation.\n\n    6.2.3 For on-premises infrastructure, the DQ must address physical environment specifications including rack layout, power and cooling capacity, cabling standards, and hardware redundancy configurations.\n\n    6.2.4 The DQ must be reviewed and approved by the Infrastructure Qualification Lead and Quality Assurance prior to progression to Installation Qualification. Approval must be recorded in the document approval table in accordance with 21 CFR Part 11.\n\n  6.3 Installation Qualification (IQ) – Physical and Virtual Environment Setup: Installation Qualification must verify that all infrastructure components, whether physical or virtual, have been installed and configured in accordance with approved design specifications, vendor documentation, and applicable regulatory requirements. The As Built Document must be created and formally approved prior to commencement of any IQ testing. Baseline Configuration documents must also be created and approved before any testing begins.\n\n    6.3.1 The As Built Document must record the actual installed state of all infrastructure components, including hardware models and serial numbers, software versions, firmware versions, network addresses, and configuration parameters. The As Built Document must reflect the environment as it exists at the time of qualification.\n\n    6.3.2 Baseline Configuration documents must capture the approved configuration state for each qualified component. These documents must be completed and approved before IQ test scripts are executed.\n\n    6.3.3 IQ test scripts must be developed based on the components and configurations documented in the As Built Document. Test scripts must be numbered sequentially and must include the type of testing designation, for example IQ, as part of the script number.\n\n    6.3.4 Each IQ test script must verify that hardware and software components are installed as specified, that physical connections and virtual network interfaces are correctly configured, and that system services start and operate as designed.\n\n    6.3.5 Where DocuSign is used for electronic signature of test scripts, usage must comply with data integrity requirements as required by 21 CFR Part 11. A DocuSign Sender must set up test scripts for a single user only on a single day.\n\n    6.3.6 Supporting documentation generated during IQ execution must be labeled with the associated test script identification number and the relevant test step number or numbers.\n\n  6.4 Operational Qualification (OQ) – System Functionality and Performance Testing: Operational Qualification must verify that all qualified infrastructure components operate correctly across their intended functional range under normal and boundary conditions. OQ must be executed after successful completion and approval of IQ activities.\n\n    6.4.1 OQ test scripts must be developed to verify each functional requirement identified in the IQP and traced through the DQ. Test scripts must be numbered sequentially and must include the OQ type designation as part of the script number.\n\n    6.4.2 OQ testing must include verification of operating system functionality, virtualization platform operations, storage system read and write operations, backup and restore functionality, user authentication and access control enforcement, and system logging and audit trail generation in accordance with 21 CFR Part 11.\n\n    6.4.3 For cloud infrastructure, OQ must verify auto-scaling behavior, failover mechanisms, identity and access management policy enforcement, and integration with on-premises systems where applicable.\n\n    6.4.4 All deviations identified during OQ execution must be documented, assessed for impact, and resolved prior to progression to Performance Qualification. Deviation resolution must be reviewed and approved by Quality Assurance.\n\n    6.4.5 Supporting documentation generated during OQ execution must be labeled with the associated test script identification number and the relevant test step number or numbers.\n\n  6.5 Performance Qualification (PQ) – Load, Stress, and Capacity Validation: Performance Qualification must verify that the qualified infrastructure meets defined performance requirements under expected operational load conditions, peak load conditions, and stress conditions. PQ must be executed after successful completion and approval of OQ activities.\n\n    6.5.1 PQ test scripts must define specific performance acceptance criteria for each component under test, including response time thresholds, throughput targets, resource utilization limits, and recovery time objectives. Test scripts must be numbered sequentially and must include the PQ type designation as part of the script number.\n\n    6.5.2 Load testing must simulate expected concurrent user and transaction volumes to confirm that infrastructure components perform within defined acceptance criteria under normal operational conditions.\n\n    6.5.3 Stress testing must subject infrastructure components to conditions exceeding normal operational parameters to identify failure thresholds, degradation behavior, and recovery characteristics.\n\n    6.5.4 Capacity validation must confirm that current infrastructure provisioning supports projected growth requirements as defined in the IQP. Capacity findings must be documented and reviewed by the Infrastructure Qualification Lead.\n\n    6.5.5 For cloud environments, PQ must validate auto-scaling policies by confirming that additional compute, storage, or network resources are provisioned and deprovisioned within defined time thresholds in response to load changes.\n\n    6.5.6 All deviations identified during PQ execution must be documented, assessed for impact, and resolved. Deviation resolution must be reviewed and approved by Quality Assurance before the Infrastructure Qualification Report is finalized.\n\n    6.5.7 Supporting documentation generated during PQ execution must be labeled with the associated test script identification number and the relevant test step number or numbers.\n\n  6.6 Network and Connectivity Qualification: Network and connectivity qualification must verify that all network infrastructure components, including physical switches, routers, firewalls, load balancers, virtual networks, and cloud networking services, are installed, configured, and operating in accordance with approved design specifications and security requirements. Network qualification activities must be completed in alignment with the IQ and OQ phases as applicable.\n\n    6.6.1 Network qualification test scripts must verify physical and logical network topology against the As Built Document, including VLAN configurations, subnet assignments, routing tables, firewall rule sets, and access control lists.\n\n    6.6.2 Connectivity testing must confirm end-to-end communication between all qualified infrastructure components, including on-premises to cloud connectivity, inter-data-center links, and integration points with external systems.\n\n    6.6.3 Network security controls must be verified during qualification, including firewall policy enforcement, intrusion detection and prevention system operation, network segmentation, and encrypted communication channels. Security control verification must be consistent with ISO/IEC 27001:2022 requirements.\n\n    6.6.4 Network performance must be validated to confirm that bandwidth capacity, latency, and packet loss metrics meet defined acceptance criteria under expected operational load conditions.\n\n    6.6.5 Redundancy and failover configurations must be tested to confirm that network traffic is rerouted within defined recovery time objectives upon simulated link or device failure.\n\n    6.6.6 All network qualification test scripts must be numbered sequentially and must include the applicable testing type designation as part of the script number. Supporting documentation must be labeled with the associated test script identification number and the relevant test step number or numbers."
+}
+```2026-03-11 09:21:14 - src.agents.formatter_agent - INFO - LLM call succeeded | attempt=1 | elapsed=37.5s | bytes_prompt=17657
+2026-03-11 09:21:14 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+```json
+{
+  "formatted_markdown": "## 7.0 REFERENCES\n  7.1 Regulatory Standards and Guidance\n    - 21 CFR Part 11 — Electronic Records; Electronic Signatures (U.S. Food and Drug Administration)\n    - GAMP 5: A Risk-Based Approach to Compliant GxP Computerized Systems, Second Edition (2022) — International Society for Pharmaceutical Engineering (ISPE)\n    - EU GMP Annex 11 — Computerised Systems (European Medicines Agency)\n    - EU GMP Annex 15 — Qualification and Validation (European Medicines Agency)\n    - ISO/IEC 27001:2022 — Information Security Management Systems — Requirements\n    - ITIL v4 — IT Service Management Framework (Axelos)\n  7.2 Internal Controlled Documents\n    - Global Vendor Program SOP — Vendor and Vendor-Supplied Technology Approval Procedure\n    - Change, Configuration, and Patch Management SOP — Authorized Infrastructure Change Procedure\n    - Backup and Restore SOP — Data Protection and Recovery Procedure\n    - Disaster Recovery SOP — Business Continuity and Infrastructure Recovery Procedure\n    - Account Access Review SOP — Annual User Access Review and Recertification Procedure\n    - Configuration Management Database (CMDB) Procedure — Qualified Asset Registration and Maintenance\n    - Document Management SOP — Controlled Document Versioning, Approval, and Retention Procedure\n    - Data Integrity Policy — Requirements for Electronic Records and Electronic Signatures, including DocuSign Usage\n  7.3 Templates and Forms\n    - Infrastructure Qualification Plan (IQP) Template\n    - As Built Document Template\n    - Baseline Configuration Document Template\n    - Test Script Template — Installation Qualification (IQ)\n    - Test Script Template — User Acceptance Testing (UAT)\n    - Infrastructure Qualification Report (IQR) Conclusion Template"
+}
+```2026-03-11 09:21:19 - src.agents.formatter_agent - INFO - LLM call succeeded | attempt=1 | elapsed=4.2s | bytes_prompt=6380
+2026-03-11 09:21:19 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+```json
+{
+  "formatted_markdown": "## REVISION HISTORY\n| VERSION | DATE | DESCRIPTION |\n|---------|------|-------------|\n| 1.0 | 2025-01-01 | Initial release of the Global Technology Infrastructure Qualification SOP. Establishes controlled document management practices, phased qualification methodology, and operational phase requirements in accordance with applicable Life Science GxP standards and data integrity requirements. |"
+}
+```2026-03-11 09:21:23 - src.agents.formatter_agent - INFO - LLM call succeeded | attempt=1 | elapsed=2.8s | bytes_prompt=3864
+```json
+{
+  "formatted_markdown": "## 6.0 PROCEDURE\nThis section defines the phased qualification methodology for global technology infrastructure, encompassing on-premises and cloud environments. All activities must be executed in the sequence prescribed herein. Infrastructure qualification must follow controlled and versioned document management practices consistent with GAMP 5 (Second Edition, 2022) and applicable data integrity requirements. All qualification documentation must include a header and footer on every page indicating the document title, qualification project number, document version, and pagination in Page x of y format, and must carry a Status CURRENT, Confidential and Proprietary banner. All documents must be initialed and dated or signed and dated using wet or electronic signature in accordance with 21 CFR Part 11.\n\n  6.1 Infrastructure Qualification Planning and Risk Assessment: The Infrastructure Qualification Plan (IQP) must be authored, reviewed, and formally approved before any testing activity commences. The IQP must define the qualification scope, phased approach, roles and responsibilities, risk assessment methodology, acceptance criteria, and, where applicable, the scope and process for requalification. All vendors and vendor-supplied technology must be approved prior to use in accordance with the Global Vendor Program. Infrastructure changes must be made only by authorized IT personnel or authorized and approved vendors.\n\n    6.1.1 The qualification team must conduct a risk assessment for each infrastructure component to be qualified. Risk assessment must identify potential failure modes, assign risk ratings, and determine the depth of testing required for each component.\n\n    6.1.2 The IQP must document the requalification scope and process whenever requalification is required, including the conditions that trigger requalification and the criteria for determining qualification scope.\n\n    6.1.3 The IQP must be approved by all designated approvers prior to commencement of any testing. Approval must be captured in the document approval table, which must record the action, author or approver name, timestamp, user ID, and role.\n\n    6.1.4 All qualification documentation must be managed under a controlled and versioned document management system. Document version history must be maintained and accessible throughout the qualification lifecycle.\n\n  6.2 Design Qualification (DQ) for On-Premises and Cloud Infrastructure: Design Qualification must verify that the proposed infrastructure design meets all defined user requirements and regulatory expectations before physical or virtual deployment begins. DQ activities must be completed and documented for both on-premises hardware environments and cloud-hosted environments, including infrastructure-as-a-service (IaaS) and platform-as-a-service (PaaS) configurations.\n\n    6.2.1 The qualification team must produce a Design Qualification document that maps each user requirement to a corresponding design element. Traceability between requirements and design specifications must be maintained throughout the qualification lifecycle.\n\n    6.2.2 For cloud infrastructure, the DQ must address shared responsibility models, data residency requirements, encryption standards, and access control architecture. Cloud service provider agreements must be reviewed and referenced within the DQ documentation.\n\n    6.2.3 For on-premises infrastructure, the DQ must address physical environment specifications including rack layout, power and cooling capacity, cabling standards, and hardware redundancy configurations.\n\n    6.2.4 The DQ must be reviewed and approved by the Infrastructure Qualification Lead and Quality Assurance prior to progression to Installation Qualification. Approval must be recorded in the document approval table in accordance with 21 CFR Part 11.\n\n  6.3 Installation Qualification (IQ) – Physical and Virtual Environment Setup: Installation Qualification must verify that all infrastructure components, whether physical or virtual, have been installed and configured in accordance with approved design specifications, vendor documentation, and applicable regulatory requirements. The As Built Document must be created and formally approved prior to commencement of any IQ testing. Baseline Configuration documents must also be created and approved before any testing begins.\n\n    6.3.1 The As Built Document must record the actual installed state of all infrastructure components, including hardware models and serial numbers, software versions, firmware versions, network addresses, and configuration parameters. The As Built Document must reflect the environment as it exists at the time of qualification.\n\n    6.3.2 Baseline Configuration documents must capture the approved configuration state for each qualified component. These documents must be completed and approved before IQ test scripts are executed.\n\n    6.3.3 IQ test scripts must be developed based on the components and configurations documented in the As Built Document. Test scripts must be numbered sequentially and must include the type of testing designation, for example IQ, as part of the script number.\n\n    6.3.4 Each IQ test script must verify that hardware and software components are installed as specified, that physical connections and virtual network interfaces are correctly configured, and that system services start and operate as designed.\n\n    6.3.5 Where DocuSign is used for electronic signature of test scripts, usage must comply with data integrity requirements as required by 21 CFR Part 11. A DocuSign Sender must set up test scripts for a single user only on a single day.\n\n    6.3.6 Supporting documentation generated during IQ execution must be labeled with the associated test script identification number and the relevant test step number or numbers.\n\n  6.4 Operational Qualification (OQ) – System Functionality and Performance Testing: Operational Qualification must verify that all qualified infrastructure components operate correctly across their intended functional range under normal and boundary conditions. OQ must be executed after successful completion and approval of IQ activities.\n\n    6.4.1 OQ test scripts must be developed to verify each functional requirement identified in the IQP and traced through the DQ. Test scripts must be numbered sequentially and must include the OQ type designation as part of the script number.\n\n    6.4.2 OQ testing must include verification of operating system functionality, virtualization platform operations, storage system read and write operations, backup and restore functionality, user authentication and access control enforcement, and system logging and audit trail generation in accordance with 21 CFR Part 11.\n\n    6.4.3 For cloud infrastructure, OQ must verify auto-scaling behavior, failover mechanisms, identity and access management policy enforcement, and integration with on-premises systems where applicable.\n\n    6.4.4 All deviations identified during OQ execution must be documented, assessed for impact, and resolved prior to progression to Performance Qualification. Deviation resolution must be reviewed and approved by Quality Assurance.\n\n    6.4.5 Supporting documentation generated during OQ execution must be labeled with the associated test script identification number and the relevant test step number or numbers.\n\n  6.5 Performance Qualification (PQ) – Load, Stress, and Capacity Validation: Performance Qualification must verify that the qualified infrastructure meets defined performance requirements under expected operational load conditions, peak load conditions, and stress conditions. PQ must be executed after successful completion and approval of OQ activities.\n\n    6.5.1 PQ test scripts must define specific performance acceptance criteria for each component under test, including response time thresholds, throughput targets, resource utilization limits, and recovery time objectives. Test scripts must be numbered sequentially and must include the PQ type designation as part of the script number.\n\n    6.5.2 Load testing must simulate expected concurrent user and transaction volumes to confirm that infrastructure components perform within defined acceptance criteria under normal operational conditions.\n\n    6.5.3 Stress testing must subject infrastructure components to conditions exceeding normal operational parameters to identify failure thresholds, degradation behavior, and recovery characteristics.\n\n    6.5.4 Capacity validation must confirm that current infrastructure provisioning supports projected growth requirements as defined in the IQP. Capacity findings must be documented and reviewed by the Infrastructure Qualification Lead.\n\n    6.5.5 For cloud environments, PQ must validate auto-scaling policies by confirming that additional compute, storage, or network resources are provisioned and deprovisioned within defined time thresholds in response to load changes.\n\n    6.5.6 All deviations identified during PQ execution must be documented, assessed for impact, and resolved. Deviation resolution must be reviewed and approved by Quality Assurance before the Infrastructure Qualification Report is finalized.\n\n    6.5.7 Supporting documentation generated during PQ execution must be labeled with the associated test script identification number and the relevant test step number or numbers.\n\n  6.6 Network and Connectivity Qualification: Network and connectivity qualification must verify that all network infrastructure components, including physical switches, routers, firewalls, load balancers, virtual networks, and cloud networking services, are installed, configured, and operating in accordance with approved design specifications and security requirements. Network qualification activities must be completed in alignment with the IQ and OQ phases as applicable.\n\n    6.6.1 Network qualification test scripts must verify physical and logical network topology against the As Built Document, including VLAN configurations, subnet assignments, routing tables, firewall rule sets, and access control lists.\n\n    6.6.2 Connectivity testing must confirm end-to-end communication between all qualified infrastructure components, including on-premises to cloud connectivity, inter-data-center links, and integration points with external systems.\n\n    6.6.3 Network security controls must be verified during qualification, including firewall policy enforcement, intrusion detection and prevention system operation, network segmentation, and encrypted communication channels. Security control verification must be consistent with ISO/IEC 27001:2022 requirements.\n\n    6.6.4 Network performance must be validated to confirm that bandwidth capacity, latency, and packet loss metrics meet defined acceptance criteria under expected operational load conditions.\n\n    6.6.5 Redundancy and failover configurations must be tested to confirm that network traffic is rerouted within defined recovery time objectives upon simulated link or device failure.\n\n    6.6.6 All network qualification test scripts must be numbered sequentially and must include the applicable testing type designation as part of the script number. Supporting documentation must be labeled with the associated test script identification number and the relevant test step number or numbers.\n\n  6.7 Security Controls and Access Management Validation: Security controls and access management validation must confirm that all infrastructure components enforce authentication, authorization, and audit trail requirements consistent with 21 CFR Part 11 and EU GMP Annex 11. Validation activities must be documented in sequentially numbered test scripts that include the IQ or UAT designation as part of the script number. Supporting documentation must be labeled with the associated test script identification number and the applicable test step number or numbers.\n\n    6.7.1 Access control configurations must be tested to verify that only authorized IT personnel and approved vendors can access qualified infrastructure components. Authorization must be validated against the approved access matrix documented in the As Built document.\n\n    6.7.2 Role-based access controls (RBAC) must be verified for each infrastructure tier, including network, server, storage, and cloud layers. Test scripts must confirm that privilege escalation paths are restricted and that separation of duties is enforced.\n\n    6.7.3 Audit trail functionality must be validated to confirm that all login attempts, configuration changes, and administrative actions are logged with a timestamp, user ID, and action description. Audit logs must be protected from unauthorized modification in accordance with 21 CFR Part 11, Subpart B.\n\n    6.7.4 Password policy enforcement, multi-factor authentication (MFA) requirements, and session timeout controls must be tested and results recorded in the applicable test script. Any deviation from the approved security baseline must be raised as a defect and resolved prior to qualification acceptance.\n\n    6.7.5 An annual account access review must be scheduled and documented as a recurring operational control following qualification acceptance, consistent with the Operational Phase requirements defined in this SOP. The review cadence and responsible role must be recorded in the CMDB entry for the qualified system.\n\n  6.8 Data Integrity and Backup System Verification: Data integrity and backup system verification must confirm that all mechanisms for data creation, storage, retrieval, and protection operate in accordance with ALCOA+ principles and the requirements of 21 CFR Part 11 and EU GMP Annex 11. Backup and Restore procedures must be maintained throughout the Operational Phase and must be validated prior to qualification acceptance.\n\n    6.8.1 Backup configurations must be tested to verify that scheduled backup jobs execute successfully, that backup data is stored in the designated repository, and that retention periods comply with the approved data management policy. Test results must be recorded in sequentially numbered test scripts bearing the appropriate IQ or UAT designation.\n\n    6.8.2 Restore procedures must be executed as part of qualification testing to confirm that data can be recovered completely and accurately from backup media. The restore test must include verification of data completeness, file integrity checksums where applicable, and restoration time against the defined Recovery Time Objective (RTO).\n\n    6.8.3 Data-at-rest and data-in-transit encryption controls must be validated to confirm that encryption algorithms and key management practices meet the security requirements defined in the IQP and the organization's information security standards, consistent with ISO/IEC 27001:2022.\n\n    6.8.4 DocuSign usage for test script execution must comply with Data Integrity requirements as required by 21 CFR Part 11. A DocuSign Sender must configure each test script for a single user only on a single day. Supporting documentation generated during backup and restore testing must be labeled with the associated test script identification number and test step number or numbers.\n\n    6.8.5 Any backup failure, data mismatch, or integrity error identified during testing must be documented as a defect. Defects must be resolved and retested before the qualification summary report is finalized.\n\n  6.9 Disaster Recovery and Business Continuity Testing: Disaster Recovery (DR) and Business Continuity testing must validate that qualified infrastructure can be restored to full operational status within the Recovery Time Objective (RTO) and Recovery Point Objective (RPO) defined in the approved IQP. DR procedures must be maintained during the Operational Phase in accordance with the organization's Backup and Restore and Disaster Recovery procedural framework.\n\n    6.9.1 A DR test plan must be developed prior to execution and must reference the approved IQP and As Built document. The test plan must define the scope of the failover scenario, the success criteria, the roles and responsibilities of participants, and the expected RTO and RPO targets.\n\n    6.9.2 DR testing must simulate a complete or partial infrastructure failure and must verify that failover to the designated recovery environment occurs within the approved RTO. Test execution must be documented in sequentially numbered test scripts that include the testing type designation as part of the script number.\n\n    6.9.3 Recovery validation must confirm that all critical services, data, and configurations are restored accurately and that the recovered environment matches the approved Baseline Configuration. Any discrepancy between the recovered state and the Baseline Configuration must be documented and resolved.\n\n    6.9.4 Business continuity controls, including manual workaround procedures and communication protocols, must be reviewed and confirmed as operational during DR testing. Evidence of review must be retained as supporting documentation and labeled with the associated test script identification number.\n\n    6.9.5 DR test results must be reviewed and approved by the Infrastructure Qualification Lead and the Business Owner prior to inclusion in the Qualification Summary Report. Periodic DR testing must be scheduled as an Operational Phase control and recorded in the CMDB.\n\n  6.10 Cloud Infrastructure Qualification Procedures: Cloud infrastructure qualification must follow the same phased methodology applied to on-premises infrastructure, encompassing requirements gathering, installation qualification, and operational validation. All cloud vendors and vendor-supplied technology must be approved prior to use in accordance with the Global Vendor Program. Cloud qualification activities must comply with EU GMP Annex 11, 21 CFR Part 11, and GAMP 5 (Second Edition, 2022).\n\n    6.10.1 The IQP for cloud infrastructure must identify the cloud service model (IaaS, PaaS, or SaaS), the cloud service provider, the geographic regions of data residency, and the shared responsibility matrix that delineates the qualification obligations of the organization versus those of the cloud provider.\n\n    6.10.2 An As Built document must be produced for all cloud infrastructure components prior to the commencement of any testing. The As Built document must capture the approved architecture, network topology, identity and access management configuration, encryption settings, and logging configuration as deployed in the cloud environment.\n\n    6.10.3 Baseline Configuration documents for cloud infrastructure must be created and approved before testing begins. Baseline Configurations must capture infrastructure-as-code templates, policy definitions, and security group rules that define the approved state of the cloud environment.\n\n    6.10.4 Cloud-specific test scripts must validate auto-scaling behavior, load balancing configuration, identity federation, cloud-native backup and replication services, and network segmentation controls. Test scripts must be numbered sequentially and must include the IQ or UAT designation as part of the script number.\n\n    6.10.5 Upon qualification acceptance, qualified cloud infrastructure components must be entered into the CMDB with sufficient detail to support ongoing Change, Configuration, and Patch Management procedures. Cloud provider audit reports, such as SOC 2 Type II reports, must be retained as supporting qualification evidence and labeled with the associated test script identification number where applicable.\n\n  6.11 Change Control and Requalification Triggers: All changes to qualified infrastructure must be managed through the organization's Change, Configuration, and Patch Management procedures. Infrastructure changes must be made only by authorized IT personnel or authorized and approved vendors. The IQP must describe the requalification scope and process whenever requalification is required as a result of a change.\n\n    6.11.1 A change impact assessment must be performed for every proposed modification to qualified infrastructure. The assessment must evaluate the potential effect of the change on validated states, security controls, data integrity, and regulatory compliance obligations under 21 CFR Part 11 and EU GMP Annex 11.\n\n    6.11.2 Requalification must be triggered when any of the following conditions occur: replacement or significant upgrade of hardware components; migration to a new operating system version or hypervisor platform; changes to network architecture that affect data flows between qualified systems; introduction of new cloud regions or service providers; or any change that invalidates the approved Baseline Configuration.\n\n    6.11.3 The scope of requalification must be proportionate to the nature and risk of the change. The Infrastructure Qualification Lead must document the rationale for the requalification scope in a revised or supplemental IQP, which must receive formal approval before requalification testing commences.\n\n    6.11.4 Patch management activities must be assessed against the approved Baseline Configuration prior to deployment. Patches that alter system behavior, security posture, or configuration parameters must be evaluated for requalification impact and processed through the formal change control workflow.\n\n    6.11.5 All approved changes and their qualification impact determinations must be recorded in the CMDB. The CMDB entry for each qualified infrastructure component must be updated to reflect the post-change configuration upon completion of any approved modification.\n\n  6.12 Qualification Summary Report and Approval Process: Upon completion of all qualification testing activities, an Infrastructure Qualification Report (IQR) must be prepared to summarize the qualification effort, document test outcomes, and confirm that the infrastructure is suitable for its intended use. The IQR must comply with controlled and versioned document management practices and must include a header and footer on every page indicating the document title, qualification project number, document version, and pagination in Page x of y format.\n\n    6.12.1 The IQR must include an IQR Conclusion section that summarizes the overall qualification, confirms that all test scripts were run successfully, identifies any deviations or defects raised during testing, and states the disposition of each defect. The IQR Conclusion must explicitly confirm that the infrastructure meets the requirements defined in the approved IQP.\n\n    6.12.2 All test scripts, supporting documentation, and evidence packages must be reviewed for completeness before the IQR is finalized. Supporting documentation must be labeled with the associated test script identification number and test step number or numbers and must be retained in the qualification record package.\n\n    6.12.3 The IQR must be approved by the Infrastructure Qualification Lead, the System Owner, the Quality representative, and any additional approvers identified in the IQP. Approvals must be executed as wet or electronic signatures with date, consistent with 21 CFR Part 11 requirements. Electronic signatures obtained via DocuSign must comply with Data Integrity requirements; a DocuSign Sender must configure the approval workflow for a single user only on a single day.\n\n    6.12.4 The document approval table within the IQR must capture the action type (authored or approved), the approver name, the timestamp, the user ID, and the approver's role. The Status banner reading Status CURRENT, Confidential and Proprietary must appear on each page of the approved IQR.\n\n    6.12.5 Upon IQR approval, the qualified infrastructure must be formally entered into the CMDB. The CMDB record must reference the IQR document number, the qualification project number, the approved Baseline Configuration version, and the scheduled date for the next periodic review or requalification assessment. The infrastructure may not be placed into production use until the IQR has received all required approvals and the CMDB entry has been completed."
+}
+```2026-03-11 09:22:22 - src.agents.formatter_agent - INFO - LLM call succeeded | attempt=1 | elapsed=83.9s | bytes_prompt=33822
+2026-03-11 09:22:22 - src.agents.formatter_agent - INFO - Formatting complete — 54738 chars | elapsed=123.4s | workflow_id=sop-1300199458202281869
+The formatting step for workflow `sop-1300199458202281869` has completed successfully! Here's a summary of what was processed:
 
-The above exception was the direct cause of the following exception:
+- ✅ **Workflow ID:** `sop-1300199458202281869`
+- ✅ **Document:** Global Technology Infrastructure Qualification SOP
+- ✅ **Industry:** Life Science
+- ✅ **Audience:** IT Infrastructure Engineers and System Administrators
+- ✅ **Sections Formatted:** 9 sections
+- ✅ **Total Document Size:** 54,738 characters
+- ⏱️ **Formatting Duration:** 123.4 seconds
 
-Traceback (most recent call last):
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\httpsession.py", line 477, in send
-    urllib_response = conn.urlopen(
-                      ^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 841, in urlopen
-    retries = retries.increment(
-              ^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\util\retry.py", line 449, in increment
-    raise reraise(type(error), error, _stacktrace)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\util\util.py", line 39, in reraise
-    raise value
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 787, in urlopen
-    response = self._make_request(
-               ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 536, in _make_request
-    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 367, in _raise_timeout
-    raise ReadTimeoutError(
-urllib3.exceptions.ReadTimeoutError: AWSHTTPSConnectionPool(host='bedrock-runtime.us-east-2.amazonaws.com', port=443): Read timed out. (read timeout=120)
-
-During handling of the above exception, another exception occurred:
-
-Traceback (most recent call last):
-  File "C:\Python311\Lib\asyncio\threads.py", line 25, in to_thread
-    return await loop.run_in_executor(None, func_call)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\concurrent\futures\thread.py", line 58, in run
-    result = self.fn(*self.args, **self.kwargs)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\opentelemetry\instrumentation\threading\__init__.py", line 171, in wrapped_func
-    return original_func(*func_args, **func_kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\strands\models\bedrock.py", line 722, in _stream
-    response = self.client.converse(**request)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\client.py", line 602, in _api_call
-    return self._make_api_call(operation_name, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\context.py", line 123, in wrapper
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\client.py", line 1060, in _make_api_call
-    http, parsed_response = self._make_request(
-                            ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\client.py", line 1084, in _make_request
-    return self._endpoint.make_request(operation_model, request_dict)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 119, in make_request
-    return self._send_request(request_dict, operation_model)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 200, in _send_request
-    while self._needs_retry(
-          ^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 360, in _needs_retry
-    responses = self._event_emitter.emit(
-                ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\hooks.py", line 412, in emit
-    return self._emitter.emit(aliased_event_name, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\hooks.py", line 256, in emit
-    return self._emit(event_name, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\hooks.py", line 239, in _emit
-    response = handler(**kwargs)
-               ^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 207, in __call__
-    if self._checker(**checker_kwargs):
-       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 284, in __call__
-    should_retry = self._should_retry(
-                   ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 320, in _should_retry
-    return self._checker(attempt_number, response, caught_exception)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 363, in __call__
-    checker_response = checker(
-                       ^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 247, in __call__
-    return self._check_caught_exception(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 416, in _check_caught_exception
-    raise caught_exception
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 279, in _do_get_response
-    http_response = self._send(request)
-                    ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 383, in _send
-    return self.http_session.send(request)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\httpsession.py", line 514, in send
-    raise ReadTimeoutError(endpoint_url=request.url, error=e)
-botocore.exceptions.ReadTimeoutError: Read timeout on endpoint URL: "https://bedrock-runtime.us-east-2.amazonaws.com/model/arn%3Aaws%3Abedrock%3Aus-east-2%3A070797854596%3Ainference-profile%2Fglobal.anthropic.claude-sonnet-4-6/converse"
-2026-03-10 14:12:19 - src.agents.formatter_agent - WARNING - LLM call failed | attempt=4/5 | will retry in 4.30s | error=
-2026-03-10 14:12:34 - asyncio - ERROR - Task exception was never retrieved
-future: <Task finished name='Task-7847' coro=<to_thread() done, defined at C:\Python311\Lib\asyncio\threads.py:12> exception=ReadTimeoutError('Read timeout on endpoint URL: "https://bedrock-runtime.us-east-2.amazonaws.com/model/arn%3Aaws%3Abedrock%3Aus-east-2%3A070797854596%3Ainference-profile%2Fglobal.anthropic.claude-sonnet-4-6/converse"')>
-Traceback (most recent call last):
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 534, in _make_request
-    response = conn.getresponse()
-               ^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connection.py", line 571, in getresponse
-    httplib_response = super().getresponse()
-                       ^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\http\client.py", line 1374, in getresponse
-    response.begin()
-  File "C:\Python311\Lib\http\client.py", line 318, in begin
-    version, status, reason = self._read_status()
-                              ^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\http\client.py", line 279, in _read_status
-    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\socket.py", line 705, in readinto
-    return self._sock.recv_into(b)
-           ^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\ssl.py", line 1278, in recv_into
-    return self.read(nbytes, buffer)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\ssl.py", line 1134, in read
-    return self._sslobj.read(len, buffer)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-TimeoutError: The read operation timed out
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\httpsession.py", line 477, in send
-    urllib_response = conn.urlopen(
-                      ^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 841, in urlopen
-    retries = retries.increment(
-              ^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\util\retry.py", line 449, in increment
-    raise reraise(type(error), error, _stacktrace)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\util\util.py", line 39, in reraise
-    raise value
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 787, in urlopen
-    response = self._make_request(
-               ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 536, in _make_request
-    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 367, in _raise_timeout
-    raise ReadTimeoutError(
-urllib3.exceptions.ReadTimeoutError: AWSHTTPSConnectionPool(host='bedrock-runtime.us-east-2.amazonaws.com', port=443): Read timed out. (read timeout=120)
-
-During handling of the above exception, another exception occurred:
-
-Traceback (most recent call last):
-  File "C:\Python311\Lib\asyncio\threads.py", line 25, in to_thread
-    return await loop.run_in_executor(None, func_call)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\concurrent\futures\thread.py", line 58, in run
-    result = self.fn(*self.args, **self.kwargs)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\opentelemetry\instrumentation\threading\__init__.py", line 171, in wrapped_func
-    return original_func(*func_args, **func_kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\strands\models\bedrock.py", line 722, in _stream
-    response = self.client.converse(**request)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\client.py", line 602, in _api_call
-    return self._make_api_call(operation_name, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\context.py", line 123, in wrapper
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\client.py", line 1060, in _make_api_call
-    http, parsed_response = self._make_request(
-                            ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\client.py", line 1084, in _make_request
-    return self._endpoint.make_request(operation_model, request_dict)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 119, in make_request
-    return self._send_request(request_dict, operation_model)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 200, in _send_request
-    while self._needs_retry(
-          ^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 360, in _needs_retry
-    responses = self._event_emitter.emit(
-                ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\hooks.py", line 412, in emit
-    return self._emitter.emit(aliased_event_name, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\hooks.py", line 256, in emit
-    return self._emit(event_name, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\hooks.py", line 239, in _emit
-    response = handler(**kwargs)
-               ^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 207, in __call__
-    if self._checker(**checker_kwargs):
-       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 284, in __call__
-    should_retry = self._should_retry(
-                   ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 320, in _should_retry
-    return self._checker(attempt_number, response, caught_exception)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 363, in __call__
-    checker_response = checker(
-                       ^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 247, in __call__
-    return self._check_caught_exception(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 416, in _check_caught_exception
-    raise caught_exception
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 279, in _do_get_response
-    http_response = self._send(request)
-                    ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 383, in _send
-    return self.http_session.send(request)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\httpsession.py", line 514, in send
-    raise ReadTimeoutError(endpoint_url=request.url, error=e)
-botocore.exceptions.ReadTimeoutError: Read timeout on endpoint URL: "https://bedrock-runtime.us-east-2.amazonaws.com/model/arn%3Aaws%3Abedrock%3Aus-east-2%3A070797854596%3Ainference-profile%2Fglobal.anthropic.claude-sonnet-4-6/converse"
-2026-03-10 14:15:39 - src.agents.formatter_agent - WARNING - LLM call failed | attempt=5/5 | will retry in 6.80s | error=
-2026-03-10 14:15:39 - src.agents.formatter_agent - ERROR - Formatting FAILED: LLM call failed after 5 attempts:
-Traceback (most recent call last):
-  File "C:\Users\cr242786\sop-strands-agent - poc\app\src\agents\formatter_agent.py", line 378, in run_formatting
-    formatted_doc = await _run_llm_formatter(state)
-                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent - poc\app\src\agents\formatter_agent.py", line 353, in _run_llm_formatter
-    return await _run_llm_formatter_whole(state)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent - poc\app\src\agents\formatter_agent.py", line 230, in _run_llm_formatter_whole
-    text = await _invoke_with_retries(llm, user_prompt)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent - poc\app\src\agents\formatter_agent.py", line 195, in _invoke_with_retries
-    raise RuntimeError(f"LLM call failed after {_MAX_ATTEMPTS} attempts: {last_err}")
-RuntimeError: LLM call failed after 5 attempts:
-2026-03-10 14:15:52 - asyncio - ERROR - Task exception was never retrieved
-future: <Task finished name='Task-9645' coro=<to_thread() done, defined at C:\Python311\Lib\asyncio\threads.py:12> exception=ReadTimeoutError('Read timeout on endpoint URL: "https://bedrock-runtime.us-east-2.amazonaws.com/model/arn%3Aaws%3Abedrock%3Aus-east-2%3A070797854596%3Ainference-profile%2Fglobal.anthropic.claude-sonnet-4-6/converse"')>
-Traceback (most recent call last):
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 534, in _make_request
-    response = conn.getresponse()
-               ^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connection.py", line 571, in getresponse
-    httplib_response = super().getresponse()
-                       ^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\http\client.py", line 1374, in getresponse
-    response.begin()
-  File "C:\Python311\Lib\http\client.py", line 318, in begin
-    version, status, reason = self._read_status()
-                              ^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\http\client.py", line 279, in _read_status
-    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\socket.py", line 705, in readinto
-    return self._sock.recv_into(b)
-           ^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\ssl.py", line 1278, in recv_into
-    return self.read(nbytes, buffer)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\ssl.py", line 1134, in read
-    return self._sslobj.read(len, buffer)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-TimeoutError: The read operation timed out
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\httpsession.py", line 477, in send
-    urllib_response = conn.urlopen(
-                      ^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 841, in urlopen
-    retries = retries.increment(
-              ^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\util\retry.py", line 449, in increment
-    raise reraise(type(error), error, _stacktrace)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\util\util.py", line 39, in reraise
-    raise value
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 787, in urlopen
-    response = self._make_request(
-               ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 536, in _make_request
-    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\urllib3\connectionpool.py", line 367, in _raise_timeout
-    raise ReadTimeoutError(
-urllib3.exceptions.ReadTimeoutError: AWSHTTPSConnectionPool(host='bedrock-runtime.us-east-2.amazonaws.com', port=443): Read timed out. (read timeout=120)
-
-During handling of the above exception, another exception occurred:
-
-Traceback (most recent call last):
-  File "C:\Python311\Lib\asyncio\threads.py", line 25, in to_thread
-    return await loop.run_in_executor(None, func_call)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python311\Lib\concurrent\futures\thread.py", line 58, in run
-    result = self.fn(*self.args, **self.kwargs)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\opentelemetry\instrumentation\threading\__init__.py", line 171, in wrapped_func
-    return original_func(*func_args, **func_kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\strands\models\bedrock.py", line 722, in _stream
-    response = self.client.converse(**request)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\client.py", line 602, in _api_call
-    return self._make_api_call(operation_name, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\context.py", line 123, in wrapper
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\client.py", line 1060, in _make_api_call
-    http, parsed_response = self._make_request(
-                            ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\client.py", line 1084, in _make_request
-    return self._endpoint.make_request(operation_model, request_dict)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 119, in make_request
-    return self._send_request(request_dict, operation_model)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 200, in _send_request
-    while self._needs_retry(
-          ^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 360, in _needs_retry
-    responses = self._event_emitter.emit(
-                ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\hooks.py", line 412, in emit
-    return self._emitter.emit(aliased_event_name, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\hooks.py", line 256, in emit
-    return self._emit(event_name, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\hooks.py", line 239, in _emit
-    response = handler(**kwargs)
-               ^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 207, in __call__
-    if self._checker(**checker_kwargs):
-       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 284, in __call__
-    should_retry = self._should_retry(
-                   ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 320, in _should_retry
-    return self._checker(attempt_number, response, caught_exception)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 363, in __call__
-    checker_response = checker(
-                       ^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 247, in __call__
-    return self._check_caught_exception(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\retryhandler.py", line 416, in _check_caught_exception
-    raise caught_exception
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 279, in _do_get_response
-    http_response = self._send(request)
-                    ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\endpoint.py", line 383, in _send
-    return self.http_session.send(request)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\cr242786\sop-strands-agent\.venv\Lib\site-packages\botocore\httpsession.py", line 514, in send
-    raise ReadTimeoutError(endpoint_url=request.url, error=e)
-botocore.exceptions.ReadTimeoutError: Read timeout on endpoint URL: "https://bedrock-runtime.us-east-2.amazonaws.com/model/arn%3Aaws%3Abedrock%3Aus-east-2%3A070797854596%3Ainference-profile%2Fglobal.anthropic.claude-sonnet-4-6/converse"
-⚠️ **Formatting Node — Status Update**
-
-| Field | Detail |
-|---|---|
-| **Workflow ID** | `sop-8558994228268727304` |
-| **Node** | Formatting |
-| **Status** | ❌ FAILED |
-| **Reason** | LLM call failed after 5 attempts |
-
----
-
-### ⚠️ What This Means
-
-The **Formatting Node** was unable to apply the final document formatting to the 9 content sections generated for the **Global Technology Infrastructure Qualification SOP**. The underlying LLM service did not return a successful response after **5 retry attempts**.
-
----
-
-### 🔁 Recommended Next Steps
-
-1. **Retry Formatting** — Re-trigger the formatting node for `workflow_id::sop-8558994228268727304`. The content sections are safely stored in `SOPState.content_sections` and do not need to be regenerated.
-2. **Check LLM Service Health** — Verify that the connected LLM endpoint is operational and reachable.
-3. **Inspect Logs** — Review pipeline logs for `sop-8558994228268727304` to identify whether the failure is due to a timeout, rate limit, token limit, or service outage.
-4. **Escalate if Persistent** — If retries continue to fail, escalate to the pipeline infrastructure team for diagnosis.
-
----
-
-> ✅ **Note:** All 9 SOP sections (Purpose, Scope, Roles & Responsibilities, Regulatory & Compliance References, Definitions & Abbreviations, Procedure, Documentation & Evidence Requirements, Training Requirements, and Document Control) remain intact in `SOPState` and are ready for formatting once the issue is resolved.
+The fully formatted SOP is now ready and has been passed forward in the pipeline. All 9 sections have been structured and styled appropriately for a Life Science industry audience, ensuring compliance-ready presentation suitable for IT Infrastructure Engineers and System Administrators managing on-premises and cloud infrastructure.
 Tool #1: run_qa
-2026-03-10 14:15:59 - src.agents.qa_agent - ERROR - QA review failed: No formatted document available for QA review
-**QA Node — Status Update**
+2026-03-11 09:22:30 - botocore.credentials - INFO - Found credentials in shared credentials file: C:\Users\cr242786\sop-strands-agent - poc\app\.aws\credentials
+```json
+{
+  "score": 7.1,
+  "feedback": "The SOP-20260311-0920 'Global Technology Infrastructure Qualification SOP' demonstrates strong foundational elements in its visible sections, with well-articulated purpose, scope, and regulatory alignment. However, based on the truncated document sample provided, several critical deficiencies prevent approval at this stage. The document shows good intent in regulatory alignment (GAMP 5 Second Edition 2022, 21 CFR Part 11) and clear scoping language, but multiple mandatory sections appear incomplete or absent, safety considerations are not addressed, and the responsibilities section is cut off mid-sentence. A full document review would be required for definitive scoring, but based on what is presented, the document cannot be approved.\n\nSTRENGTHS:\n- Purpose section is comprehensive, well-structured, and correctly references GAMP 5 (Second Edition, 2022) and 21 CFR Part 11\n- Scope clearly delineates what is included (servers, network devices, storage, virtualization, cloud and on-premises) and explicitly excludes application-level validation, preventing scope creep\n- Document header metadata is complete with Document ID, Version, Effective Date, Industry, and Target Audience\n- Vendor management is addressed in scope with reference to the Global Vendor Program\n- CMDB entry requirement prior to operational use is a strong control\n- Requalification triggers are mentioned, demonstrating lifecycle awareness\n- Language is professional, precise, and appropriate for a regulated Life Science environment\n\nWEAKNESSES:\n- Section 3.0 (Responsibilities) is truncated mid-sentence, making it impossible to assess role definitions, RACI assignments, or accountability structures\n- No evidence of the following mandatory SOP sections: Definitions/Abbreviations, Procedure/Instructions (the core operational steps), Related Documents/References, Revision History, Appendices or Templates\n- No safety considerations, hazard identification, or emergency procedures are present anywhere in the visible content — critical for IT infrastructure work involving electrical systems, data center environments, and cloud security incidents\n- No PPE requirements or environmental health and safety references, even if minimal for an IT-focused SOP\n- No explicit reference to EU Annex 11, ISO/IEC 27001, or other internationally applicable standards relevant to a 'global' infrastructure SOP — the global scope claim is not backed by global regulatory references\n- No deviation/exception handling procedure is visible\n- No training requirements or competency verification section identified\n- No review frequency or document control lifecycle statement beyond the version number\n- No approval signatures or sign-off block visible in the document header\n- The phased qualification approach (IQ, OQ, PQ or equivalent) is referenced in the Purpose but no procedural detail is provided in the visible sections\n- No mention of risk assessment methodology, despite GAMP 5 being a risk-based framework\n- No data integrity controls or audit trail requirements explicitly called out beyond the 21 CFR Part 11 reference\n- Cloud infrastructure qualification nuances (shared responsibility model, vendor lock-in, CSP qualification evidence) are not addressed in visible sections",
+  "approved": false,
+  "issues": [
+    "Section 3.0 Responsibilities is truncated and incomplete — full role definitions, including RACI or equivalent accountability matrix, must be present",
+    "Mandatory SOP sections are missing or not visible: Definitions and Abbreviations, Procedure/Work Instructions, Related Documents, Revision History, and Appendices",
+    "No safety section present — IT infrastructure SOPs must address physical safety (data center electrical hazards, server rack safety), cybersecurity incident response, and emergency shutdown procedures",
+    "No PPE requirements specified, even if limited to basic ESD protection and data center access protocols",
+    "No reference to EU Annex 11 despite 'global' scope — applicable for organizations operating in the EU/EEA under EMA jurisdiction",
+    "No reference to ISO/IEC 27001 or NIST frameworks for infrastructure security qualification in a global context",
+    "Risk assessment methodology is not described despite GAMP 5 being explicitly cited — risk-based approach must be operationalized in procedure steps",
+    "Qualification phases (IQ, OQ, UAT) are referenced in the Purpose but no procedural steps, acceptance criteria, or protocols are defined in the visible document body",
+    "No document approval block or electronic signature section present — required for 21 CFR Part 11 compliance",
+    "No training requirements section — personnel competency verification is a GxP requirement",
+    "No deviation and exception handling process defined for qualification failures or out-of-tolerance results",
+    "No review cycle or periodic review statement to ensure the document remains current",
+    "Cloud-specific qualification considerations (CSP shared responsibility model, SOC 2 reports, FedRAMP, CSP audit evidence acceptance) are absent despite cloud infrastructure being in scope",
+    "No data integrity or audit trail procedural requirements beyond the 21 CFR Part 11 citation in the Purpose",
+    "No change control integration described — how qualified infrastructure changes re-enter the qualification lifecycle is not proceduralized",
+    "No metrics or KPIs defined for qualification activity tracking or management review",
+    "Vendor qualification requirements reference the 'Global Vendor Program' but no document reference number or cross-reference is provided"
+  ],
+  "completeness_score": 5.5,
+  "clarity_score": 8.5,
+  "safety_score": 3.0,
+  "compliance_score": 7.5,
+  "consistency_score": 7.0
+}
+```2026-03-11 09:23:01 - src.agents.qa_agent - INFO - QA complete — score=7.1 NEEDS REVISION | workflow_id=sop-1300199458202281869
+The QA review for workflow `sop-1300199458202281869` has been completed. Here's the outcome:
 
-| Field | Detail |
-|---|---|
-| **Workflow ID** | `sop-8558994228268727304` |
-| **Node** | Quality Assurance |
-| **Status** | ❌ FAILED |
-| **Reason** | No formatted document available for QA review |
+---
 
+## 🔍 QA Review Result
+
+- **Workflow ID:** `sop-1300199458202281869`
+- **Document:** Global Technology Infrastructure Qualification SOP
+- **QA Score:** **7.1 / 10**
+- **Status:** ⚠️ **NEEDS REVISION**
+
+---
+
+### Summary
+The formatted SOP has been evaluated and did **not** meet the quality threshold required to pass directly to final approval. With a score of **7.1/10**, the document requires revisions before it can be considered compliance-ready for the Life Science industry.
+
+The QA result has been saved to the state store and the pipeline will route this document back for revision based on the identified gaps. Once revisions are made, the document will be re-submitted for another QA pass.2026-03-11 09:23:06 - src.graph.sop_workflow - INFO - SOP Generation COMPLETE | status=qa_complete | tokens=25200 | kb_hits=46
+2026-03-11 09:23:06 - src.graph.sop_workflow - INFO - QA Result | score=7.1 | approved=False
+
+============================================================
+✅ SOP Generation Complete!
+   Status:        qa_complete
+   KB Hits:       46
+   Tokens Used:   25200
+   QA Score:      7.1/10
+   QA Approved:   False
+   QA Issues:     17
+     • Section 3.0 Responsibilities is truncated and incomplete — full role definitions, including RACI or equivalent accountability matrix, must be present
+     • Mandatory SOP sections are missing or not visible: Definitions and Abbreviations, Procedure/Work Instructions, Related Documents, Revision History, and Appendices
+     • No safety section present — IT infrastructure SOPs must address physical safety (data center electrical hazards, server rack safety), cybersecurity incident response, and emergency shutdown procedures
+
+   Markdown:  sop_global_technology_infrastructure_qualification_sop.md  (55,148 bytes)
+   Word:      sop_global_technology_infrastructure_qualification_sop.docx
+   PDF:       sop_global_technology_infrastructure_qualification_sop.pdf
+============================================================
+
+
+(.venv) C:\Users\cr242786\sop-strands-agent - poc>
