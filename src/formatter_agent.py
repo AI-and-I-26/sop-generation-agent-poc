@@ -2,32 +2,20 @@
 """
 formatter_agent.py — Formatter Agent for the SOP pipeline.
 
-ROLE IN PIPELINE:
-    Node 4 of 5.  Takes the structured JSON sections from the content agent
-    and renders them into Markdown that matches YOUR KB's formatting style.
-
-DYNAMIC FORMATTING:
-    The formatter receives kb_format_context — extracted from the actual KB
-    documents during the research step.  It uses this to render:
-      - Tables in the sections where the KB uses tables
-      - Indented numbered subsections where the KB uses them
-      - Plain prose where the KB uses plain prose
-      - The exact column names observed in KB tables
-      - The writing tone/style observed in KB documents
-
-    No formatting rules are hardcoded here.  The same formatter works for
-    any KB — the rendering adapts to whatever format context was discovered.
+Node 4 of 5. Converts content sections into KB‑style Markdown with
+STRICT header/footer enforcement.
 """
 
 import asyncio
 import json
 import logging
 import os
+import time
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
 
 from strands import Agent, tool
-from strands.models import BedrockModel  # Using Anthropic via Bedrock inference profile
+from strands.models import BedrockModel
 
 from src.graph.state_schema import SOPState, WorkflowStatus
 from src.graph.state_store import STATE_STORE
@@ -35,163 +23,390 @@ from src.prompts.system_prompts import FORMATTER_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
-# ── CONFIGURATION ──────────────────────────────────────────────────────────────
-# Default to Anthropic Claude (Bedrock inference profile).
+# ---------------------------------------------------------------------------
+# MODEL CONFIGURATION
+# ---------------------------------------------------------------------------
+
 _DEFAULT_MODEL_ID = (
     "arn:aws:bedrock:us-east-2:070797854596:inference-profile/global.anthropic.claude-sonnet-4-6"
 )
 _REGION = os.getenv("AWS_REGION", "us-east-2")
 
+# Tuning knobs (env overrides)
+_MAX_JSON_BYTES = int(os.getenv("FORMATTER_MAX_JSON_BYTES", "120000"))
+_MAX_CONCURRENCY = int(os.getenv("FORMATTER_MAX_CONCURRENCY", "2"))
+_READ_TIMEOUT_SECONDS = int(os.getenv("FORMATTER_READ_TIMEOUT", "180"))
+_MAX_ATTEMPTS = int(os.getenv("FORMATTER_MAX_ATTEMPTS", "5"))
+_BACKOFF_BASE = float(os.getenv("FORMATTER_BACKOFF_BASE", "1.6"))  # exponential
+_CONNECT_TIMEOUT_SECONDS = int(os.getenv("FORMATTER_CONNECT_TIMEOUT", "10"))
 
 def _get_model_id(env_var: str) -> str:
     return os.getenv(env_var, _DEFAULT_MODEL_ID)
 
-
 def _bedrock_model(env_var: str) -> BedrockModel:
-    # This uses Anthropic Claude through Bedrock. If you switch to direct Anthropic later,
-    # replace with the appropriate strands.models.AnthropicModel(...) if available in your stack.
-    return BedrockModel(model_id=_get_model_id(env_var), region=_REGION)
+    """
+    Construct a BedrockModel with best-effort higher timeouts & retries.
+    If the BedrockModel wrapper does not accept client_config, we gracefully
+    fall back to basic construction.
+    """
+    model_id = _get_model_id(env_var)
+    try:
+        # Optional: pass a botocore Config into the BedrockModel if supported
+        from botocore.config import Config
+        client_config = Config(
+            region_name=_REGION,
+            retries={"max_attempts": _MAX_ATTEMPTS, "mode": "standard"},
+            connect_timeout=_CONNECT_TIMEOUT_SECONDS,
+            read_timeout=_READ_TIMEOUT_SECONDS,
+        )
+        return BedrockModel(model_id=model_id, region=_REGION, client_config=client_config)  # type: ignore[arg-type]
+    except Exception as e:
+        logger.debug("BedrockModel without client_config (fallback). Reason: %s", e)
+        return BedrockModel(model_id=model_id, region=_REGION)
 
 
-# ── DOCUMENT HEADER ────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# DOCUMENT HEADER ASSEMBLY
+# ---------------------------------------------------------------------------
 
 def _build_document_header(state: SOPState) -> Dict[str, Any]:
-    """
-    Build the document control header dict passed to the formatter.
+    """Constructs the metadata used for header placeholders."""
+    try:
+        from src.prompts.document_templates import KB_TEMPLATE_DEFAULTS
+        defaults = dict(KB_TEMPLATE_DEFAULTS)
+    except ImportError:
+        defaults = {"status": "CURRENT", "classification": "Confidential and Proprietary", "version": "1.0"}
 
-    Contains metadata rendered at the top of the finished document:
-    title, document ID, version, effective date, industry, and audience.
-    """
     title = state.outline.title if state.outline else state.topic
     return {
         "title": title,
         "document_id": f"SOP-{datetime.now().strftime('%Y%m%d-%H%M')}",
-        "version": "1.0",
+        "version": defaults.get("version", "1.0"),
         "effective_date": datetime.now().strftime("%d-%b-%Y"),
         "industry": state.industry,
         "target_audience": state.target_audience,
+        "status": defaults.get("status", "CURRENT"),
+        "classification": defaults.get("classification", "Confidential and Proprietary"),
     }
 
 
-# ── LLM FORMATTER ──────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# HEADER/FOOTER FINALIZER
+# ---------------------------------------------------------------------------
 
-async def _run_llm_formatter(state: SOPState) -> str:
+def _apply_header_footer(
+    header_template: str,
+    footer_template: str,
+    metadata: Dict[str, str],
+    body: str
+) -> str:
     """
-    Call Anthropic Claude (via Bedrock) to convert content_sections JSON into KB-format Markdown.
-
-    Passes the full content_sections dict to FORMATTER_SYSTEM_PROMPT which
-    knows the exact rendering rules for each section type.
-
-    Returns the formatted Markdown string.
+    Enforces the exact KB header/footer around the LLM-generated Markdown body.
+    Also injects a per-section page header line before every ## heading so that
+    document control metadata appears at the top of each rendered page.
     """
-    header = _build_document_header(state)
+    def _substitute(template: str) -> str:
+        result = template
+        for key, value in metadata.items():
+            result = result.replace("{{" + key + "}}", str(value))
+        return result
 
-    payload = json.dumps(
-        {
-            "document_header": header,
-            "sections": state.content_sections,
-            "kb_format_context": state.kb_format_context or {},
-        },
-        indent=2,
-        ensure_ascii=False,
+    # Build document-level header
+    header_block = _substitute(header_template).strip() if header_template else ""
+
+    # Inject per-section page header line before every ## section heading
+    # This ensures document ID / version / status appears on every page when
+    # rendered to Word or PDF.
+    try:
+        from src.prompts.document_templates import KB_PAGE_HEADER_LINE
+        page_header = _substitute(KB_PAGE_HEADER_LINE)
+        # Insert the page header line immediately before each top-level ## heading
+        import re as _re
+        body = _re.sub(
+            r'(^|\n)(## )',
+            lambda m: f"{m.group(1)}\n{page_header}\n\n{m.group(2)}",
+            body
+        )
+    except ImportError:
+        pass  # KB_PAGE_HEADER_LINE not available; skip per-section injection
+
+    # Assemble final document
+    parts = []
+    if header_block:
+        parts.append(header_block)
+    parts.append(body.strip())
+    if footer_template and footer_template.strip():
+        parts.append(_substitute(footer_template).strip())
+
+    return "\n\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# HELPERS
+# ---------------------------------------------------------------------------
+
+def _json_len(obj: Any) -> int:
+    try:
+        return len(json.dumps(obj, ensure_ascii=False))
+    except Exception:
+        return 0
+
+def _strip_code_fences(text: str) -> str:
+    t = text.strip()
+    if t.startswith("```"):
+        parts = t.split("```")
+        if len(parts) >= 2:
+            t = parts[1].strip()
+            if t.lower().startswith("json"):
+                t = t[4:].strip()
+    return t
+
+def _ordered_section_keys(state: SOPState) -> List[str]:
+    """
+    Try to order sections according to the outline numbers if available.
+    Fallback to the dict order in content_sections.
+    """
+    if state.outline and state.outline.sections:
+        ordered: List[str] = []
+        seen = set()
+        for sec in state.outline.sections:
+            k = sec.number
+            if k in state.content_sections and k not in seen:
+                ordered.append(k)
+                seen.add(k)
+        # append any remaining
+        for k in state.content_sections.keys():
+            if k not in seen:
+                ordered.append(k)
+        return ordered
+    return list(state.content_sections.keys())
+
+async def _invoke_with_retries(llm: Agent, prompt: str) -> str:
+    """
+    Invoke the LLM with retries and simple backoff.
+    Note: asyncio.wait_for adds a hard cap; underlying botocore read_timeout
+    is increased in _bedrock_model (best effort).
+    """
+    last_err: Optional[Exception] = None
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        try:
+            start = time.time()
+            # Give a bit more than read timeout to allow coroutine wrapping
+            resp = await asyncio.wait_for(llm.invoke_async(prompt), timeout=_READ_TIMEOUT_SECONDS + 15)
+            elapsed = time.time() - start
+            logger.info("LLM call succeeded | attempt=%d | elapsed=%.1fs | bytes_prompt=%d",
+                        attempt, elapsed, len(prompt))
+            return str(resp).strip()
+        except Exception as e:
+            last_err = e
+            # Jittered exponential backoff
+            backoff = (_BACKOFF_BASE ** (attempt - 1)) + (0.05 * attempt)
+            logger.warning("LLM call failed | attempt=%d/%d | will retry in %.2fs | error=%s",
+                           attempt, _MAX_ATTEMPTS, backoff, e)
+            if attempt == _MAX_ATTEMPTS:
+                break
+            await asyncio.sleep(backoff)
+    raise RuntimeError(f"LLM call failed after {_MAX_ATTEMPTS} attempts: {last_err}")
+
+def _llm_from_env(name: str) -> Agent:
+    return Agent(
+        name=name,
+        model=_bedrock_model("MODEL_FORMATTER"),
+        system_prompt=FORMATTER_SYSTEM_PROMPT,
     )
+
+
+# ---------------------------------------------------------------------------
+# LLM FORMATTER — WHOLE DOCUMENT
+# ---------------------------------------------------------------------------
+
+async def _run_llm_formatter_whole(state: SOPState) -> str:
+    """
+    Single-shot: send all sections and context at once.
+    """
+    header_metadata = _build_document_header(state)
+    payload = {
+        "document_header": header_metadata,
+        "sections": state.content_sections,
+        "kb_format_context": state.kb_format_context or {},
+        "kb_header_template": state.kb_header_template or "",
+        "kb_footer_template": state.kb_footer_template or "",
+    }
 
     user_prompt = (
         "Convert the following SOP JSON payload into KB-format Markdown "
         "following your system prompt rules exactly.\n\n"
-        f"{payload}\n\n"
-        'Return ONLY a JSON object with one key: "formatted_markdown" '
-        "whose value is the complete Markdown string."
+        f"{json.dumps(payload, indent=2, ensure_ascii=False)}\n\n"
+        'Return ONLY a JSON object: {"formatted_markdown": "..."}'
     )
 
-    # IMPORTANT: Do NOT pass max_tokens (constructor-time) to Agent; it is not supported.
-    llm = Agent(
-        name="FormatterLLM",
-        model=_bedrock_model("MODEL_FORMATTER"),
-        system_prompt=FORMATTER_SYSTEM_PROMPT,
-        # If you need output limits, pass them at the underlying model call level (Bedrock: maxTokens)
-        # via your model wrapper, not here.
-    )
+    llm = _llm_from_env("FormatterLLM(whole)")
+    text = await _invoke_with_retries(llm, user_prompt)
+    text = _strip_code_fences(text)
 
-    response = await llm.invoke_async(user_prompt)
-    response_text = str(response).strip()
-
-    # Strip code fences if present
-    if response_text.startswith("```"):
-        parts = response_text.split("```")
-        if len(parts) >= 2:
-            response_text = parts[1]
-            if response_text.lower().startswith("json"):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
-
-    # The model should return { "formatted_markdown": "..." }
     try:
-        result = json.loads(response_text)
+        parsed = json.loads(text)
+        if "formatted_markdown" in parsed:
+            base_md = parsed["formatted_markdown"]
+        else:
+            logger.warning("Model returned JSON but missing formatted_markdown; using raw text.")
+            base_md = text
     except Exception:
-        logger.warning("Formatter returned non-JSON; using raw response as markdown.")
-        return response_text
+        logger.warning("Formatter returned non-JSON response (whole); using raw output.")
+        base_md = text
 
-    if isinstance(result, dict) and "formatted_markdown" in result:
-        return result["formatted_markdown"]
+    # Apply header/footer once
+    final_doc = _apply_header_footer(
+        state.kb_header_template or "",
+        state.kb_footer_template or "",
+        header_metadata,
+        base_md,
+    )
+    return final_doc
 
-    logger.warning("Formatter JSON missing 'formatted_markdown'; using raw response.")
-    return response_text
+
+# ---------------------------------------------------------------------------
+# LLM FORMATTER — PER SECTION (CHUNKED)
+# ---------------------------------------------------------------------------
+
+async def _format_one_section(
+    section_key: str,
+    section_payload: Any,
+    kb_format_context: Dict[str, Any],
+) -> Tuple[str, str]:
+    """
+    Formats a single section. Returns (section_key, formatted_markdown).
+    """
+    # Keep prompt minimal: only the section, plus style hints
+    payload = {
+        "section_key": section_key,
+        "section": section_payload,
+        "kb_format_context": kb_format_context or {},
+    }
+    user_prompt = (
+        "Format ONLY the given section into KB-style Markdown. "
+        "Do not include document-level headers/footers or cover/title pages. "
+        "Return ONLY a JSON object: {\"formatted_markdown\": \"...\"}\n\n"
+        f"{json.dumps(payload, indent=2, ensure_ascii=False)}"
+    )
+
+    llm = _llm_from_env(f"FormatterLLM(sec:{section_key})")
+    text = await _invoke_with_retries(llm, user_prompt)
+    text = _strip_code_fences(text)
+
+    try:
+        parsed = json.loads(text)
+        if "formatted_markdown" in parsed:
+            formatted = parsed["formatted_markdown"]
+        else:
+            logger.warning("Section %s: JSON missing formatted_markdown; using raw text.", section_key)
+            formatted = text
+    except Exception:
+        logger.warning("Section %s: non-JSON response; using raw output.", section_key)
+        formatted = text
+
+    return section_key, str(formatted or "").strip()
+
+async def _run_llm_formatter_chunked(state: SOPState) -> str:
+    """
+    Formats each section separately and stitches them together.
+    """
+    header_metadata = _build_document_header(state)
+    keys = _ordered_section_keys(state)
+
+    sem = asyncio.Semaphore(_MAX_CONCURRENCY)
+
+    async def _bounded_format(key: str, payload: Any) -> Tuple[str, str]:
+        async with sem:
+            return await _format_one_section(key, payload, state.kb_format_context or {})
+
+    tasks = [asyncio.create_task(_bounded_format(k, state.content_sections[k])) for k in keys]
+    results: List[Tuple[str, str]] = await asyncio.gather(*tasks, return_exceptions=False)
+
+    # Rebuild in order (keys list order)
+    formatted_map = {k: v for k, v in results}
+    stitched = "\n\n".join([formatted_map.get(k, "") for k in keys if formatted_map.get(k, "")])
+
+    # Final header/footer pass
+    final_doc = _apply_header_footer(
+        state.kb_header_template or "",
+        state.kb_footer_template or "",
+        header_metadata,
+        stitched,
+    )
+    return final_doc
 
 
-# ── STRANDS TOOL ───────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# STRATEGY SELECTOR
+# ---------------------------------------------------------------------------
+
+async def _run_llm_formatter(state: SOPState) -> str:
+    """
+    Choose whole-document vs per-section based on payload size.
+    """
+    # Fast size estimate to decide strategy
+    header_metadata = _build_document_header(state)
+    size_probe = {
+        "document_header": header_metadata,
+        "sections": state.content_sections,
+        "kb_format_context": state.kb_format_context or {},
+        "kb_header_template": state.kb_header_template or "",
+        "kb_footer_template": state.kb_footer_template or "",
+    }
+    approx_bytes = _json_len(size_probe)
+
+    logger.info("Formatter payload size ~%d bytes | sections=%d", approx_bytes, len(state.content_sections or {}))
+
+    # If small enough, try whole-document; otherwise, chunk
+    if approx_bytes > _MAX_JSON_BYTES:
+        logger.info("Payload exceeds %d bytes — using per-section chunked formatting.", _MAX_JSON_BYTES)
+        return await _run_llm_formatter_chunked(state)
+    else:
+        logger.info("Payload within limit — using single-shot whole-document formatting.")
+        return await _run_llm_formatter_whole(state)
+
+
+# ---------------------------------------------------------------------------
+# GRAPH TOOL: run_formatting()
+# ---------------------------------------------------------------------------
 
 @tool
 async def run_formatting(prompt: str) -> str:
-    """
-    Execute the SOP formatting step.
-
-    Reads the structured JSON sections from STATE_STORE, calls the LLM
-    formatter, and writes the resulting Markdown back to SOPState.
-
-    Args:
-        prompt: Graph message string containing 'workflow_id::<id>'.
-
-    Returns:
-        "workflow_id::<id> | Formatting complete: ..." or error string.
-    """
     logger.info(">>> run_formatting | prompt: %.120s", prompt)
 
-    # ── Extract workflow_id ──────────────────────────────────────────────
     workflow_id = ""
     if "workflow_id::" in prompt:
         workflow_id = prompt.split("workflow_id::")[1].split()[0].strip()
 
     state: SOPState = STATE_STORE.get(workflow_id)
+
     if state is None:
         return f"ERROR: no state found for workflow_id={workflow_id}"
 
     try:
         if not state.content_sections:
-            raise ValueError(
-                "No content sections available for formatting. "
-                "Ensure content_agent ran successfully."
-            )
+            raise ValueError("No content sections available for formatting.")
 
-        # ── LLM rendering ────────────────────────────────────────────────
-        formatted_md = await _run_llm_formatter(state)
+        t0 = time.time()
+        formatted_doc = await _run_llm_formatter(state)
+        elapsed = time.time() - t0
 
-        # Write to both fields for compatibility
-        state.formatted_markdown = formatted_md
-        state.formatted_document = formatted_md   # kept for backward compat
+        state.formatted_markdown = formatted_doc
+        state.formatted_document = formatted_doc
         state.status = WorkflowStatus.FORMATTED
         state.current_node = "formatter"
+        # This is a rough token proxy; consider adding real token usage if available
         state.increment_tokens(800)
 
         logger.info(
-            "Formatting complete — %d chars | workflow_id=%s",
-            len(formatted_md), workflow_id
+            "Formatting complete — %d chars | elapsed=%.1fs | workflow_id=%s",
+            len(formatted_doc), elapsed, workflow_id,
         )
 
         return (
-            f"workflow_id::{workflow_id} | "
-            f"Formatting complete: document assembled with "
-            f"{len(state.content_sections)} sections ({len(formatted_md)} chars)"
+            f"workflow_id::{workflow_id} | Formatting complete "
+            f"({len(state.content_sections)} sections, {len(formatted_doc)} chars, {elapsed:.1f}s)"
         )
 
     except Exception as e:
@@ -201,7 +416,9 @@ async def run_formatting(prompt: str) -> str:
         return f"workflow_id::{workflow_id} | Formatting FAILED: {e}"
 
 
-# ── NODE AGENT ─────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# NODE AGENT
+# ---------------------------------------------------------------------------
 
 formatter_agent = Agent(
     name="FormatterNode",
@@ -210,8 +427,7 @@ formatter_agent = Agent(
         "You are the formatting node in an SOP generation pipeline. "
         "When you receive a message, IMMEDIATELY call the run_formatting tool "
         "with the full message as the prompt argument. "
-        "Do not add any commentary — just call the tool and return its result."
+        "Do not add commentary."
     ),
     tools=[run_formatting],
-    # Do NOT add max_tokens here.
 )

@@ -53,8 +53,8 @@ _DEFAULT_MODEL_ARN = (
 _REGION = os.getenv("AWS_REGION", "us-east-2")
 
 # Env-driven caps (tune without code changes)
-_CONTENT_MAX_TOKENS_PER_SECTION = int(os.getenv("CONTENT_MAX_TOKENS_PER_SECTION", "3000"))
-_CONTENT_MAX_FACTS_PER_SECTION  = int(os.getenv("CONTENT_MAX_FACTS_PER_SECTION", "12"))
+_CONTENT_MAX_TOKENS_PER_SECTION = int(os.getenv("CONTENT_MAX_TOKENS_PER_SECTION", "6000"))
+_CONTENT_MAX_FACTS_PER_SECTION  = int(os.getenv("CONTENT_MAX_FACTS_PER_SECTION", "20"))
 _CONTENT_MAX_CITES_PER_SECTION  = int(os.getenv("CONTENT_MAX_CITES_PER_SECTION", "12"))
 _PROCEDURE_SPLIT_MIN_SUBSECTIONS = int(os.getenv("CONTENT_PROCEDURE_SPLIT_MIN_SUBSECTIONS", "6"))
 
@@ -228,6 +228,48 @@ def _pick_insights_for_prefixes(
     return {"facts": facts[:max_facts], "citations": cites[:max_cites]}
 
 
+# Title-keyword to canonical section number mapping for fallback matching
+_TITLE_TO_SECTION_NUMBER: Dict[str, str] = {
+    "purpose": "1.0",
+    "scope": "2.0",
+    "responsibilities": "3.0",
+    "definitions": "4.0",
+    "abbreviations": "4.0",
+    "materials": "5.0",
+    "procedure": "6.0",
+    "qualification": "6.0",
+    "execution": "6.0",
+    "references": "7.0",
+    "revision": "8.0",
+    "history": "8.0",
+}
+
+
+def _canonical_section_number(section_name: str, sec_num: str) -> str:
+    """
+    Map a planning-agent section number/title back to the canonical 1.0–8.0 numbering
+    used by the research agent's section_insights.  This bridges the gap when the
+    planning agent uses domain-specific section numbers (e.g. '4' or 'Section 4 IQ')
+    that don't align with the research agent's standard 1.0–8.0 keys.
+    """
+    # If already canonical, use as-is
+    if sec_num in ("1.0", "2.0", "3.0", "4.0", "5.0", "6.0", "7.0", "8.0"):
+        return sec_num
+    # Keyword match on section title
+    name_lower = (section_name or "").lower()
+    for keyword, canonical in _TITLE_TO_SECTION_NUMBER.items():
+        if keyword in name_lower:
+            return canonical
+    # Extract leading digit (e.g. "3" → "3.0")
+    m = re.match(r"^(\d+)", str(sec_num))
+    if m:
+        digit = m.group(1)
+        candidate = f"{digit}.0"
+        if candidate in ("1.0", "2.0", "3.0", "4.0", "5.0", "6.0", "7.0", "8.0"):
+            return candidate
+    return sec_num
+
+
 def _outline_subsections_for(state: SOPState, sec_num: str) -> List[Tuple[str, str]]:
     """
     Return list of (number, title) for immediate subsections of a top-level section.
@@ -304,7 +346,10 @@ def _make_section_prompt(
         "KB FORMAT CONTEXT — follow these conventions exactly:",
         kb_format_ctx_str,
         "",
-        "KB FACTS — ground all statements in these facts (do not invent):",
+        "KB FACTS — these are extracted directly from your Knowledge Base.",
+        "CRITICAL: Ground ALL statements in these facts. Do not contradict them.",
+        "If facts are present, use them verbatim or paraphrase closely.",
+        "If facts are empty, generate best-practice content aligned with compliance requirements.",
         facts_s,
         "",
         "KB CITATIONS (for provenance; do not include raw URIs in the prose):",
@@ -315,8 +360,9 @@ def _make_section_prompt(
         "",
         "TASK:",
         "Write the complete, publication-ready content for this SOP section.",
-        "Use a concise, imperative style consistent with the KB format context.",
-        "Do NOT output JSON or code fences; return plain prose only.",
+        "Return ONLY a valid JSON object as specified in your system prompt.",
+        "Use formal imperative style ('must', 'shall') consistent with the KB format context.",
+        "Ensure all mandatory content requirements from your system prompt are addressed.",
     ]
     if concise_hint:
         parts += ["", "CONCISE MODE: Keep this section succinct (<= 700 words)."]
@@ -428,6 +474,18 @@ async def run_content(prompt: str) -> str:
         compliance: List[str]     = list(getattr(rf, "compliance_requirements", []) or [])
         section_insights_raw      = list(getattr(rf, "section_insights", []) or [])
 
+        # FIX: Log available section_insights keys so lookup failures are visible in logs
+        available_si_keys = []
+        for si in section_insights_raw:
+            if isinstance(si, dict):
+                available_si_keys.append(str(si.get("section", "?")))
+            else:
+                available_si_keys.append(str(getattr(si, "section", "?")))
+        logger.info(
+            "section_insights: %d entries | keys=%s | workflow_id=%s",
+            len(available_si_keys), available_si_keys, workflow_id,
+        )
+
         # Group insights by section number according to the list schema
         grouped = _group_insights_by_section(section_insights_raw)
 
@@ -435,12 +493,32 @@ async def run_content(prompt: str) -> str:
         state.content_sections = state.content_sections or {}
         STATE_STORE[workflow_id] = state
 
-        # Generate in canonical order (sequential to avoid rate throttling)
-        for section_name in KB_SECTIONS:
-            sec_num = SECTION_NUMBER_MAP.get(section_name, "")
+        # FIX: Use planning outline sections (domain-specific) instead of hardcoded KB_SECTIONS.
+        # Falls back to KB_SECTIONS only when planning outline is unavailable.
+        if state.outline and getattr(state.outline, "sections", None):
+            sections_to_write = [
+                (sec.title, sec.number)
+                for sec in state.outline.sections
+            ]
+            logger.info(
+                "Using planning outline: %d sections | workflow_id=%s",
+                len(sections_to_write), workflow_id,
+            )
+        else:
+            logger.warning(
+                "Planning outline unavailable — falling back to canonical KB_SECTIONS | workflow_id=%s",
+                workflow_id,
+            )
+            sections_to_write = [
+                (name, SECTION_NUMBER_MAP.get(name, ""))
+                for name in KB_SECTIONS
+            ]
+
+        # Generate sequentially (avoids rate throttling)
+        for section_name, sec_num in sections_to_write:
 
             # Handle optional split for PROCEDURE if many subsections
-            if section_name == "PROCEDURE":
+            if "procedure" in section_name.lower() or "qualification" in section_name.lower():
                 subs = _outline_subsections_for(state, sec_num)
                 if len(subs) >= _PROCEDURE_SPLIT_MIN_SUBSECTIONS:
                     logger.info(
@@ -451,18 +529,35 @@ async def run_content(prompt: str) -> str:
                     part1_prefixes = [n for (n, _) in subs[:mid]]
                     part2_prefixes = [n for (n, _) in subs[mid:]]
 
+                    # CRITICAL FIX: use canonical section number for insight lookup
+                    canonical_proc_num = _canonical_section_number(section_name, sec_num)
                     sel1 = _pick_insights_for_prefixes(
                         grouped=grouped,
                         prefixes=part1_prefixes,
                         max_facts=_CONTENT_MAX_FACTS_PER_SECTION,
                         max_cites=_CONTENT_MAX_CITES_PER_SECTION,
                     )
+                    # Fallback: if no hits by subsection prefix, use canonical section insights
+                    if not sel1.get("facts"):
+                        sel1 = _pick_insights_for_section(
+                            grouped=grouped,
+                            sec_num=canonical_proc_num,
+                            max_facts=_CONTENT_MAX_FACTS_PER_SECTION,
+                            max_cites=_CONTENT_MAX_CITES_PER_SECTION,
+                        )
                     sel2 = _pick_insights_for_prefixes(
                         grouped=grouped,
                         prefixes=part2_prefixes,
                         max_facts=_CONTENT_MAX_FACTS_PER_SECTION,
                         max_cites=_CONTENT_MAX_CITES_PER_SECTION,
                     )
+                    if not sel2.get("facts"):
+                        sel2 = _pick_insights_for_section(
+                            grouped=grouped,
+                            sec_num=canonical_proc_num,
+                            max_facts=_CONTENT_MAX_FACTS_PER_SECTION,
+                            max_cites=_CONTENT_MAX_CITES_PER_SECTION,
+                        )
 
                     outline1 = _format_subsections_lines([(n, t) for (n, t) in subs[:mid]])
                     outline2 = _format_subsections_lines([(n, t) for (n, t) in subs[mid:]])
@@ -501,9 +596,11 @@ async def run_content(prompt: str) -> str:
                     continue  # next section
 
             # Default single-pass generation for other sections (or small Procedure)
+            # CRITICAL FIX: map planning outline section number → canonical research number
+            canonical_num = _canonical_section_number(section_name, sec_num)
             selected = _pick_insights_for_section(
                 grouped=grouped,
-                sec_num=sec_num,
+                sec_num=canonical_num,
                 max_facts=_CONTENT_MAX_FACTS_PER_SECTION,
                 max_cites=_CONTENT_MAX_CITES_PER_SECTION,
             )
@@ -511,8 +608,8 @@ async def run_content(prompt: str) -> str:
             outline_text = _format_subsections_lines(subs)
 
             logger.info(
-                "Generating section '%s' (%s) | workflow_id=%s | facts=%d, cites=%d",
-                section_name, sec_num, workflow_id,
+                "Generating section '%s' (%s→canonical:%s) | workflow_id=%s | facts=%d, cites=%d",
+                section_name, sec_num, canonical_num, workflow_id,
                 len(selected.get("facts", [])), len(selected.get("citations", []))
             )
 
@@ -560,7 +657,7 @@ async def run_content(prompt: str) -> str:
 
 content_agent = Agent(
     name="ContentNode",
-    model=BedrockModel(model_id=_get_model_id("MODEL_CONTENT"), max_tokens=1024),
+    model=BedrockModel(model_id=_get_model_id("MODEL_CONTENT")),
     system_prompt=(
         "You are the content generation node in an SOP generation pipeline. "
         "When you receive a message, IMMEDIATELY call the run_content tool "

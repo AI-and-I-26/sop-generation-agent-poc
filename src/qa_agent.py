@@ -22,6 +22,7 @@ from strands.models import BedrockModel
 
 from src.graph.state_schema import SOPState, QAResult, WorkflowStatus
 from src.graph.state_store import STATE_STORE
+from src.prompts.system_prompts import QA_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,6 @@ def _get_model_id(env_var: str) -> str:
 
 
 def _bedrock_model(env_var: str) -> BedrockModel:
-    # IMPORTANT: Do NOT pass unsupported args like max_tokens to constructor.
-    # If you later need token caps, add them at the model-invoke layer in your wrapper.
     return BedrockModel(model_id=_get_model_id(env_var), region=_REGION)
 
 
@@ -50,35 +49,7 @@ def _make_llm_agent() -> Agent:
     return Agent(
         name="QALLM",
         model=_bedrock_model("MODEL_QA"),
-        system_prompt="""You are a quality assurance specialist for Standard Operating Procedures.
-
-EVALUATION CRITERIA (each scored 0-10):
-1. Completeness  — all mandatory sections present, adequate detail, no gaps
-2. Clarity       — instructions clear and unambiguous, logical step ordering
-3. Safety        — all hazards identified, warnings present, PPE specified,
-                   emergency procedures included
-4. Compliance    — regulations referenced, industry standards followed
-5. Consistency   — formatting uniform, terminology consistent, numbering correct
-
-SCORING RULES:
-- Overall score = average of all five criteria
-- Score >= 8.0  → approved: true
-- Score <  8.0  → approved: false  (needs revision)
-
-OUTPUT FORMAT — Return ONLY valid JSON:
-{
-  "score": 8.5,
-  "feedback": "Detailed feedback here",
-  "approved": true,
-  "issues": ["Issue 1", "Issue 2"],
-  "completeness_score": 9.0,
-  "clarity_score": 8.5,
-  "safety_score": 8.0,
-  "compliance_score": 8.5,
-  "consistency_score": 9.0
-}
-
-Be thorough, objective, and provide specific actionable feedback.""",
+        system_prompt=QA_SYSTEM_PROMPT,
     )
 
 
@@ -149,7 +120,7 @@ def _normalize_qa_json(data: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(approved, str):
         approved = approved.strip().lower() in {"true", "yes", "y", "approved", "1"}
     if approved is None:
-        approved = bool(score >= 8.0)
+        approved = bool(score >= 8.5)
 
     # Ensure each criterion is within 0..10 (or default to 0 if missing)
     def clamp(x: Any) -> float:
@@ -207,24 +178,37 @@ async def run_qa(prompt: str) -> str:
 
         llm = _make_llm_agent()
 
-        # Keep prompt reasonably bounded
-        doc_sample = (
-            formatted_doc[:3000] + "..."
-            if len(formatted_doc) > 3000
-            else formatted_doc
-        )
+        # Build the full sections-written list so QA doesn't penalise absent sections
+        # that are simply in another part of the document
+        sections_written = list(state.content_sections.keys()) if state.content_sections else []
+
+        # Send the FULL document — not a 3000-char truncation.
+        # QA scoring a truncated doc was the primary cause of low scores.
+        # Cap at 50 000 chars (well above typical SOP) to stay within context.
+        MAX_DOC_CHARS = 50000
+        if len(formatted_doc) > MAX_DOC_CHARS:
+            doc_for_qa = (
+                formatted_doc[:MAX_DOC_CHARS]
+                + f"\n\n[Document truncated at {MAX_DOC_CHARS} chars for QA review; "
+                f"full document is {len(formatted_doc)} chars]"
+            )
+        else:
+            doc_for_qa = formatted_doc
+
+        kb_format_context = state.kb_format_context or {}
 
         qa_prompt = (
-            f"Review this SOP document:\n\n"
+            f"Review this SOP document for quality, completeness, and compliance.\n\n"
             f"Topic: {state.topic}\n"
-            f"Industry: {state.industry}\n\n"
-            f"Document Sample:\n{doc_sample}\n\n"
-            f"Provide a comprehensive quality assessment with:\n"
-            f"1. Overall score (0-10)\n"
-            f"2. Individual criterion scores\n"
-            f"3. Specific feedback on strengths and weaknesses\n"
-            f"4. List of issues to address\n"
-            f"5. Approval decision (true if score >= 8.0)\n\n"
+            f"Industry: {state.industry}\n"
+            f"Target Audience: {state.target_audience}\n\n"
+            f"SECTIONS WRITTEN (all sections the pipeline generated — "
+            f"do NOT penalise for any section in this list):\n"
+            f"{json.dumps(sections_written, indent=2)}\n\n"
+            f"KB FORMAT CONTEXT (evaluate the document against these conventions):\n"
+            f"{json.dumps(kb_format_context, indent=2)}\n\n"
+            f"FULL DOCUMENT:\n{doc_for_qa}\n\n"
+            f"Provide a comprehensive quality assessment per your scoring rubric.\n"
             f"Return complete JSON with all required fields."
         )
 
