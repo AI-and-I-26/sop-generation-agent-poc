@@ -719,8 +719,13 @@ async def _synthesize_findings(
     """
     Use Claude to synthesise structured ResearchFindings from the raw KB chunks.
     """
+    # Configurable via env — balance between KB coverage and synthesis timeout risk.
+    # Default: 25 chunks × 1200 chars ≈ 30KB context — synthesises well within 300s.
+    _MAX_CHUNKS      = int(os.getenv("RESEARCH_MAX_SYNTHESIS_CHUNKS", "25"))
+    _MAX_CHUNK_CHARS = int(os.getenv("RESEARCH_MAX_CHUNK_CHARS", "1200"))
+
     kb_context_lines: List[str] = []
-    for i, doc in enumerate(kb_docs[:35]):   # was [:15] — send more chunks
+    for i, doc in enumerate(kb_docs[:_MAX_CHUNKS]):
         content = (doc.get("content") or "").strip()
         if not content:
             continue
@@ -728,7 +733,7 @@ async def _synthesize_findings(
         source = doc.get("source", "Unknown")
         kb_context_lines.append(
             f"[{i+1}] score={score:.3f} | source={source}\n"
-            f"  {_truncate(content, 1500)}"   # was 700 — more content per chunk
+            f"  {_truncate(content, _MAX_CHUNK_CHARS)}"
         )
     kb_context = "\n\n".join(kb_context_lines) or "(no KB results)"
 
@@ -784,7 +789,18 @@ async def _synthesize_findings(
     )
 
     def _invoke() -> Dict[str, Any]:
-        client = boto3.client("bedrock-runtime", region_name=_REGION)
+        from botocore.config import Config as _BotoCfg
+        _read_to = int(os.getenv("RESEARCH_READ_TIMEOUT", "300"))
+        _conn_to = int(os.getenv("RESEARCH_CONNECT_TIMEOUT", "10"))
+        client = boto3.client(
+            "bedrock-runtime",
+            region_name=_REGION,
+            config=_BotoCfg(
+                read_timeout=_read_to,
+                connect_timeout=_conn_to,
+                retries={"max_attempts": 1, "mode": "standard"},
+            ),
+        )
         return _invoke_model_json(
             client=client,
             model_id=model_id,
