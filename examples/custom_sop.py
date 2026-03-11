@@ -342,17 +342,29 @@ async def main():
     md_path = Path(f"sop_{safe_name}.md")
     md_path.write_text(doc_text, encoding="utf-8")
 
-    # ── Write Word document ───────────────────────────────────────────────────
+    # ── Write Word document (CRL header/footer on every page) ────────────────
     docx_path = None
-    if _DOCX_AVAILABLE:
-        try:
-            docx_path = Path(f"sop_{safe_name}.docx")
-            doc = Document()
-            write_markdown_to_docx(doc, doc_text)
-            doc.save(str(docx_path))
-        except Exception as e:
-            logging.exception("Failed to create .docx: %s", e)
-            docx_path = None
+    try:
+        from src.utils.crl_docx_writer import build_crl_docx
+        from datetime import datetime as _dt
+
+        document_id    = getattr(result, "document_id",    None) or f"SOP-{abs(hash(TOPIC)) % 100000:05d}"
+        sop_version    = getattr(result, "sop_version",    "1.0")
+        effective_date = getattr(result, "effective_date", _dt.now().strftime("%d/%b/%Y"))
+
+        docx_path = Path(f"sop_{safe_name}.docx")
+        docx_bytes = build_crl_docx(
+            title=TOPIC,
+            document_id=document_id,
+            version=sop_version,
+            effective_date=effective_date,
+            markdown_body=doc_text,
+        )
+        docx_path.write_bytes(docx_bytes)
+        logging.info("CRL .docx written — %d bytes | path=%s", len(docx_bytes), docx_path)
+    except Exception as e:
+        logging.exception("Failed to create .docx: %s", e)
+        docx_path = None
 
     # ── Write PDF ─────────────────────────────────────────────────────────────
     pdf_path = None
@@ -390,3 +402,4 @@ async def main():
 # =============================================================================
 if __name__ == "__main__":
     asyncio.run(main())
+
