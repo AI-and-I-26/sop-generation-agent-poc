@@ -122,7 +122,17 @@ def _invoke_bedrock_text(
     """
     Call Bedrock Anthropic Messages API directly and return (text, stop_reason).
     """
-    client = boto3.client("bedrock-runtime", region_name=region or _REGION)
+    _read_to = int(os.getenv("CONTENT_READ_TIMEOUT", "300"))
+    from botocore.config import Config as _BotoCfg
+    client = boto3.client(
+        "bedrock-runtime",
+        region_name=region or _REGION,
+        config=_BotoCfg(
+            read_timeout=_read_to,
+            connect_timeout=10,
+            retries={"max_attempts": 1, "mode": "standard"},
+        ),
+    )
     model = model_id or _get_model_id("MODEL_CONTENT")
     body = {
         "anthropic_version": "bedrock-2023-05-31",
@@ -418,27 +428,17 @@ async def run_content(prompt: str) -> str:
             )
 
         if not state.research:
-            # Research failed (e.g. timeout) — continue with empty findings rather than
-            # blocking the entire pipeline. Content will be generated from compliance
-            # requirements and best-practice knowledge without KB grounding.
-            logger.warning(
-                "No research findings in state — proceeding with empty KB facts. "
-                "Content will be generated from compliance baseline only. | workflow_id=%s",
-                workflow_id,
+            raise ValueError(
+                "No research findings in state. Ensure research agent completed successfully."
             )
-            from src.agents.research_agent import get_compliance_requirements
-            compliance_fallback = get_compliance_requirements(state.industry, state.topic)
-            best_practices: List[str] = []
-            compliance: List[str]     = list(compliance_fallback)
-            section_insights_raw: List[Any] = []
-        else:
-            # Pull research fields normally
-            rf = state.research
-            best_practices = list(getattr(rf, "best_practices", []) or [])
-            compliance     = list(getattr(rf, "compliance_requirements", []) or [])
-            section_insights_raw = list(getattr(rf, "section_insights", []) or [])
 
-        # Log available section_insights keys so lookup failures are visible in logs
+        # Pull research fields
+        rf = state.research
+        best_practices: List[str] = list(getattr(rf, "best_practices", []) or [])
+        compliance: List[str]     = list(getattr(rf, "compliance_requirements", []) or [])
+        section_insights_raw      = list(getattr(rf, "section_insights", []) or [])
+
+        # FIX: Log available section_insights keys so lookup failures are visible in logs
         available_si_keys = []
         for si in section_insights_raw:
             if isinstance(si, dict):
@@ -452,12 +452,6 @@ async def run_content(prompt: str) -> str:
 
         # Group insights by section number according to the list schema
         grouped = _group_insights_by_section(section_insights_raw)
-
-        # Ensure kb_format_context is available — populate from outline if research failed
-        if not state.kb_format_context:
-            from src.agents.research_agent import _format_context_from_outline
-            state.kb_format_context = _format_context_from_outline(state)
-            logger.info("kb_format_context populated from outline fallback | workflow_id=%s", workflow_id)
 
         # Prepare container; persist early to ensure structure exists
         state.content_sections = state.content_sections or {}
