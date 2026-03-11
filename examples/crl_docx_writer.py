@@ -51,8 +51,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
-from docx.shared import Inches, Pt, RGBColor, Cm
-from docx.util import Twips
+from docx.shared import Inches, Pt, RGBColor, Cm, Twips
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +128,9 @@ def _add_run(para, text: str, bold=False, size_pt: int = 9,
 def _make_table_border(table):
     """Apply single black border to entire table."""
     tbl    = table._tbl
-    tblPr  = tbl.find(qn("w:tblPr")) or OxmlElement("w:tblPr")
+    tblPr  = tbl.find(qn("w:tblPr"))
+    if tblPr is None:
+        tblPr = OxmlElement("w:tblPr")
     tblBorders = OxmlElement("w:tblBorders")
     for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
         el = OxmlElement(f"w:{side}")
@@ -139,7 +140,7 @@ def _make_table_border(table):
         el.set(qn("w:color"), _BORDER_COLOR)
         tblBorders.append(el)
     tblPr.append(tblBorders)
-    if not tbl.find(qn("w:tblPr")):
+    if tbl.find(qn("w:tblPr")) is None:
         tbl.insert(0, tblPr)
 
 
@@ -211,7 +212,7 @@ def _build_crl_header(header_obj, title: str, document_id: str,
         p._p.getparent().remove(p._p)
 
     # ── Row 1: 3-column identity row ────────────────────────────────────
-    tbl = header_obj.add_table(rows=1, cols=3)
+    tbl = header_obj.add_table(rows=1, cols=3, width=Twips(_COL_LEFT + _COL_CENTRE + _COL_RIGHT))
     tbl.alignment = WD_TABLE_ALIGNMENT.LEFT
     tbl.style    = "Table Grid"
 
@@ -257,7 +258,7 @@ def _build_crl_header(header_obj, title: str, document_id: str,
     _make_table_border(tbl)
 
     # ── Row 2: Title row (merged across all 3 cols) ──────────────────────
-    tbl2 = header_obj.add_table(rows=1, cols=1)
+    tbl2 = header_obj.add_table(rows=1, cols=1, width=Twips(_COL_LEFT + _COL_CENTRE + _COL_RIGHT))
     tbl2.alignment = WD_TABLE_ALIGNMENT.LEFT
     tbl2.style = "Table Grid"
     tbl2.columns[0].cells[0].width = Twips(_COL_LEFT + _COL_CENTRE + _COL_RIGHT)
