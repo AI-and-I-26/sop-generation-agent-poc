@@ -14,6 +14,8 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+import boto3
+from botocore.config import Config as _BotoCfg
 from strands import Agent, tool
 from strands.models import BedrockModel
 
@@ -45,24 +47,81 @@ def _get_model_id(env_var: str) -> str:
 
 def _bedrock_model(env_var: str) -> BedrockModel:
     """
-    Construct a BedrockModel with best-effort higher timeouts & retries.
-    If the BedrockModel wrapper does not accept client_config, we gracefully
-    fall back to basic construction.
+    BedrockModel used ONLY for the Strands Agent wrapper (planning/qa nodes).
+    NOTE: BedrockModel ignores client_config so we cannot control read_timeout
+    through it. Heavy formatter calls use _invoke_bedrock_direct() instead.
     """
     model_id = _get_model_id(env_var)
-    try:
-        # Optional: pass a botocore Config into the BedrockModel if supported
-        from botocore.config import Config
-        client_config = Config(
-            region_name=_REGION,
-            retries={"max_attempts": _MAX_ATTEMPTS, "mode": "standard"},
-            connect_timeout=_CONNECT_TIMEOUT_SECONDS,
-            read_timeout=_READ_TIMEOUT_SECONDS,
-        )
-        return BedrockModel(model_id=model_id, region=_REGION, client_config=client_config)  # type: ignore[arg-type]
-    except Exception as e:
-        logger.debug("BedrockModel without client_config (fallback). Reason: %s", e)
-        return BedrockModel(model_id=model_id, region=_REGION)
+    return BedrockModel(model_id=model_id)
+
+
+def _make_boto3_client():
+    """
+    Create a boto3 bedrock-runtime client with FORMATTER_READ_TIMEOUT (default 400s).
+    This bypasses BedrockModel entirely so we get reliable long-running calls.
+    """
+    read_to = int(os.getenv("FORMATTER_READ_TIMEOUT", "400"))
+    conn_to = int(os.getenv("FORMATTER_CONNECT_TIMEOUT", "10"))
+    return boto3.client(
+        "bedrock-runtime",
+        region_name=_REGION,
+        config=_BotoCfg(
+            read_timeout=read_to,
+            connect_timeout=conn_to,
+            retries={"max_attempts": 1, "mode": "standard"},
+        ),
+    )
+
+
+def _invoke_bedrock_direct(system_prompt: str, user_prompt: str) -> str:
+    """
+    Call Bedrock invoke_model directly with a long read timeout.
+    Returns the assistant text response.
+    Retries up to _MAX_ATTEMPTS times with exponential backoff.
+    """
+    model_id = _get_model_id("MODEL_FORMATTER")
+    body = {
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 8192,
+        "temperature": 0.0,
+        "system": system_prompt,
+        "messages": [{"role": "user", "content": [{"type": "text", "text": user_prompt}]}],
+    }
+    last_err: Optional[Exception] = None
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        try:
+            t0 = time.time()
+            client = _make_boto3_client()
+            resp = client.invoke_model(
+                modelId=model_id,
+                contentType="application/json",
+                accept="application/json",
+                body=json.dumps(body).encode("utf-8"),
+            )
+            raw = resp.get("body")
+            body_json = json.loads(raw.read()) if raw is not None else {}
+            # Extract text from Anthropic Messages response
+            content_blocks = body_json.get("content", [])
+            text = ""
+            for blk in content_blocks:
+                if isinstance(blk, dict) and blk.get("type") == "text":
+                    text += blk.get("text", "")
+            elapsed = time.time() - t0
+            logger.info(
+                "Formatter direct invoke OK | attempt=%d | elapsed=%.1fs | chars=%d",
+                attempt, elapsed, len(text),
+            )
+            return text.strip()
+        except Exception as e:
+            last_err = e
+            backoff = (_BACKOFF_BASE ** (attempt - 1)) + (0.05 * attempt)
+            logger.warning(
+                "Formatter direct invoke failed | attempt=%d/%d | retry in %.2fs | error=%s",
+                attempt, _MAX_ATTEMPTS, backoff, e,
+            )
+            if attempt < _MAX_ATTEMPTS:
+                time.sleep(backoff)
+    raise RuntimeError(f"Formatter invoke failed after {_MAX_ATTEMPTS} attempts: {last_err}")
 
 
 # ---------------------------------------------------------------------------
@@ -149,39 +208,7 @@ def _ordered_section_keys(state: SOPState) -> List[str]:
         return ordered
     return list(state.content_sections.keys())
 
-async def _invoke_with_retries(llm: Agent, prompt: str) -> str:
-    """
-    Invoke the LLM with retries and simple backoff.
-    Note: asyncio.wait_for adds a hard cap; underlying botocore read_timeout
-    is increased in _bedrock_model (best effort).
-    """
-    last_err: Optional[Exception] = None
-    for attempt in range(1, _MAX_ATTEMPTS + 1):
-        try:
-            start = time.time()
-            # Give a bit more than read timeout to allow coroutine wrapping
-            resp = await asyncio.wait_for(llm.invoke_async(prompt), timeout=_READ_TIMEOUT_SECONDS + 15)
-            elapsed = time.time() - start
-            logger.info("LLM call succeeded | attempt=%d | elapsed=%.1fs | bytes_prompt=%d",
-                        attempt, elapsed, len(prompt))
-            return str(resp).strip()
-        except Exception as e:
-            last_err = e
-            # Jittered exponential backoff
-            backoff = (_BACKOFF_BASE ** (attempt - 1)) + (0.05 * attempt)
-            logger.warning("LLM call failed | attempt=%d/%d | will retry in %.2fs | error=%s",
-                           attempt, _MAX_ATTEMPTS, backoff, e)
-            if attempt == _MAX_ATTEMPTS:
-                break
-            await asyncio.sleep(backoff)
-    raise RuntimeError(f"LLM call failed after {_MAX_ATTEMPTS} attempts: {last_err}")
-
-def _llm_from_env(name: str) -> Agent:
-    return Agent(
-        name=name,
-        model=_bedrock_model("MODEL_FORMATTER"),
-        system_prompt=FORMATTER_SYSTEM_PROMPT,
-    )
+# _invoke_with_retries and _llm_from_env removed — using _invoke_bedrock_direct() instead
 
 
 # ---------------------------------------------------------------------------
@@ -208,8 +235,7 @@ async def _run_llm_formatter_whole(state: SOPState) -> str:
         'Return ONLY a JSON object: {"formatted_markdown": "..."}'
     )
 
-    llm = _llm_from_env("FormatterLLM(whole)")
-    text = await _invoke_with_retries(llm, user_prompt)
+    text = await asyncio.to_thread(_invoke_bedrock_direct, FORMATTER_SYSTEM_PROMPT, user_prompt)
     text = _strip_code_fences(text)
 
     try:
@@ -258,8 +284,7 @@ async def _format_one_section(
         f"{json.dumps(payload, indent=2, ensure_ascii=False)}"
     )
 
-    llm = _llm_from_env(f"FormatterLLM(sec:{section_key})")
-    text = await _invoke_with_retries(llm, user_prompt)
+    text = await asyncio.to_thread(_invoke_bedrock_direct, FORMATTER_SYSTEM_PROMPT, user_prompt)
     text = _strip_code_fences(text)
 
     try:
@@ -364,16 +389,6 @@ async def run_formatting(prompt: str) -> str:
         state.formatted_document = formatted_doc
         state.status = WorkflowStatus.FORMATTED
         state.current_node = "formatter"
-
-        # Persist doc metadata so sop_workflow can stamp the .docx header/footer
-        _meta = _build_document_header(state)
-        try:
-            state.document_id    = _meta.get("document_id",    getattr(state, "document_id",    ""))
-            state.sop_version    = _meta.get("version",        getattr(state, "sop_version",    "1.0"))
-            state.effective_date = _meta.get("effective_date", getattr(state, "effective_date", ""))
-        except Exception:
-            pass  # state schema may not have these fields yet
-
         # This is a rough token proxy; consider adding real token usage if available
         state.increment_tokens(800)
 
