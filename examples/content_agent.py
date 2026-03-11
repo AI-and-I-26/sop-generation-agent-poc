@@ -56,7 +56,7 @@ _REGION = os.getenv("AWS_REGION", "us-east-2")
 _CONTENT_MAX_TOKENS_PER_SECTION = int(os.getenv("CONTENT_MAX_TOKENS_PER_SECTION", "3000"))
 _CONTENT_MAX_FACTS_PER_SECTION  = int(os.getenv("CONTENT_MAX_FACTS_PER_SECTION", "12"))
 _CONTENT_MAX_CITES_PER_SECTION  = int(os.getenv("CONTENT_MAX_CITES_PER_SECTION", "12"))
-_PROCEDURE_SPLIT_MIN_SUBSECTIONS = int(os.getenv("CONTENT_PROCEDURE_SPLIT_MIN_SUBSECTIONS", "4"))
+_PROCEDURE_SPLIT_MIN_SUBSECTIONS = int(os.getenv("CONTENT_PROCEDURE_SPLIT_MIN_SUBSECTIONS", "6"))
 
 # Log effective caps for visibility
 logger.info(
@@ -121,21 +121,8 @@ def _invoke_bedrock_text(
 ) -> Tuple[str, Optional[str]]:
     """
     Call Bedrock Anthropic Messages API directly and return (text, stop_reason).
-    Uses a configurable read timeout (default 300s) to handle large PROCEDURE sections.
     """
-    from botocore.config import Config as _BotocoreConfig
-    _read_timeout = int(os.getenv("CONTENT_READ_TIMEOUT", "300"))
-    _connect_timeout = int(os.getenv("CONTENT_CONNECT_TIMEOUT", "10"))
-    _boto_config = _BotocoreConfig(
-        read_timeout=_read_timeout,
-        connect_timeout=_connect_timeout,
-        retries={"max_attempts": 2, "mode": "standard"},
-    )
-    client = boto3.client(
-        "bedrock-runtime",
-        region_name=region or _REGION,
-        config=_boto_config,
-    )
+    client = boto3.client("bedrock-runtime", region_name=region or _REGION)
     model = model_id or _get_model_id("MODEL_CONTENT")
     body = {
         "anthropic_version": "bedrock-2023-05-31",
@@ -431,17 +418,27 @@ async def run_content(prompt: str) -> str:
             )
 
         if not state.research:
-            raise ValueError(
-                "No research findings in state. Ensure research agent completed successfully."
+            # Research failed (e.g. timeout) — continue with empty findings rather than
+            # blocking the entire pipeline. Content will be generated from compliance
+            # requirements and best-practice knowledge without KB grounding.
+            logger.warning(
+                "No research findings in state — proceeding with empty KB facts. "
+                "Content will be generated from compliance baseline only. | workflow_id=%s",
+                workflow_id,
             )
+            from src.agents.research_agent import get_compliance_requirements
+            compliance_fallback = get_compliance_requirements(state.industry, state.topic)
+            best_practices: List[str] = []
+            compliance: List[str]     = list(compliance_fallback)
+            section_insights_raw: List[Any] = []
+        else:
+            # Pull research fields normally
+            rf = state.research
+            best_practices = list(getattr(rf, "best_practices", []) or [])
+            compliance     = list(getattr(rf, "compliance_requirements", []) or [])
+            section_insights_raw = list(getattr(rf, "section_insights", []) or [])
 
-        # Pull research fields
-        rf = state.research
-        best_practices: List[str] = list(getattr(rf, "best_practices", []) or [])
-        compliance: List[str]     = list(getattr(rf, "compliance_requirements", []) or [])
-        section_insights_raw      = list(getattr(rf, "section_insights", []) or [])
-
-        # FIX: Log available section_insights keys so lookup failures are visible in logs
+        # Log available section_insights keys so lookup failures are visible in logs
         available_si_keys = []
         for si in section_insights_raw:
             if isinstance(si, dict):
@@ -455,6 +452,12 @@ async def run_content(prompt: str) -> str:
 
         # Group insights by section number according to the list schema
         grouped = _group_insights_by_section(section_insights_raw)
+
+        # Ensure kb_format_context is available — populate from outline if research failed
+        if not state.kb_format_context:
+            from src.agents.research_agent import _format_context_from_outline
+            state.kb_format_context = _format_context_from_outline(state)
+            logger.info("kb_format_context populated from outline fallback | workflow_id=%s", workflow_id)
 
         # Prepare container; persist early to ensure structure exists
         state.content_sections = state.content_sections or {}
