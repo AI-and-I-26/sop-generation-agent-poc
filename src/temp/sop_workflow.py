@@ -227,7 +227,7 @@ sop_workflow = create_sop_workflow()
 # so the QA agent and .docx/.pdf writers never see raw template syntax.
 # ---------------------------------------------------------------------------
 _TEMPLATE_DEFAULTS: dict = {
-    "status":         "DRAFT",
+    "status":         "CURRENT",
     "classification": "INTERNAL",
     "department":     "Quality Assurance",
     "next_review":    "TBD",
