@@ -101,7 +101,7 @@ KB_APPROVAL_TABLE = """\
 """
 
 KB_TEMPLATE_DEFAULTS = {
-    "status":         "DRAFT",
+    "status":         "CURRENT",
     "classification": "INTERNAL",
     "version":        "1.0",
     "department":     "Quality Assurance",
