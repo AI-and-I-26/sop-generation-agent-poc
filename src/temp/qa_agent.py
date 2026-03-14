@@ -38,6 +38,8 @@ def _get_model_id(env_var: str) -> str:
 
 
 def _bedrock_model(env_var: str) -> BedrockModel:
+    # NOTE: BedrockModel does not accept a "region" kwarg in current Strands SDK.
+    # Region is resolved via AWS_REGION env var / boto3 session automatically.
     return BedrockModel(model_id=_get_model_id(env_var))
 
 
@@ -115,12 +117,11 @@ def _normalize_qa_json(data: Dict[str, Any]) -> Dict[str, Any]:
     feedback = str(data.get("feedback", "")).strip()
     issues = _ensure_list(data.get("issues", []))
 
-    # Approved default based on policy if not provided
-    approved = data.get("approved", None)
-    if isinstance(approved, str):
-        approved = approved.strip().lower() in {"true", "yes", "y", "approved", "1"}
-    if approved is None:
-        approved = bool(score >= 8.5)
+    # POLICY: approved is ALWAYS computed from score >= 8.5.
+    # The model's qualitative "approved" field is ignored — it was
+    # overriding the mathematical threshold (e.g. returning false at
+    # 8.7 because it counted issues). The score IS the policy gate.
+    approved = bool(score >= 8.5)
 
     # Ensure each criterion is within 0..10 (or default to 0 if missing)
     def clamp(x: Any) -> float:
