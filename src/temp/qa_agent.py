@@ -38,7 +38,9 @@ def _get_model_id(env_var: str) -> str:
 
 
 def _bedrock_model(env_var: str) -> BedrockModel:
-    return BedrockModel(model_id=_get_model_id(env_var), region=_REGION)
+    # NOTE: BedrockModel does not accept a "region" kwarg in current Strands SDK.
+    # Region is resolved via AWS_REGION env var / boto3 session automatically.
+    return BedrockModel(model_id=_get_model_id(env_var))
 
 
 # ---------------------------------------------------------------------------
