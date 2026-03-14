@@ -223,6 +223,70 @@ def _ordered_section_keys(state: SOPState) -> List[str]:
         return ordered
     return list(state.content_sections.keys())
 
+
+
+def _extract_formatted_markdown(text: str) -> str:
+    """
+    Robust extraction of the formatted_markdown value from formatter output.
+
+    Handles three cases:
+      1. Valid JSON with "formatted_markdown" key  -> normal parse
+      2. JSON too large / truncated but key exists -> regex extraction
+      3. Plain Markdown returned directly          -> use as-is
+
+    This fixes the PROCEDURE raw-JSON-in-body bug: when the model returns
+    a {"formatted_markdown": "...38K chars..."} blob that fails json.loads
+    due to truncation, the raw JSON wrapper was previously inserted verbatim
+    into the document.  This function extracts the value correctly.
+    """
+    import re as _re
+    t = _strip_code_fences(text)
+
+    # Path 1: clean JSON parse
+    try:
+        parsed = json.loads(t)
+        if isinstance(parsed, dict) and "formatted_markdown" in parsed:
+            return str(parsed["formatted_markdown"]).strip()
+        return t
+    except Exception:
+        pass
+
+    # Path 2: regex fallback for truncated/oversized JSON responses.
+    # Extracts the value of "formatted_markdown" even if the outer JSON
+    # is not valid, by finding the key and reading to end of string.
+    m = _re.search('"formatted_markdown"' + r'\s*:\s*"', t)
+    if m:
+        start = m.end()
+        # Walk forward collecting the string value, respecting \ escapes
+        chars = []
+        i = start
+        while i < len(t):
+            c = t[i]
+            if c == '\\' and i + 1 < len(t):
+                nc = t[i + 1]
+                if nc == 'n':
+                    chars.append('\n')
+                elif nc == 't':
+                    chars.append('\t')
+                elif nc == '"':
+                    chars.append('"')
+                elif nc == '\\':
+                    chars.append('\\')
+                else:
+                    chars.append(nc)
+                i += 2
+                continue
+            if c == '"':
+                break
+            chars.append(c)
+            i += 1
+        extracted = "".join(chars).strip()
+        if extracted:
+            return extracted
+
+    # Path 3: plain Markdown returned directly -- use as-is
+    return t
+
 # _invoke_with_retries and _llm_from_env removed — using _invoke_bedrock_direct() instead
 
 
@@ -253,15 +317,9 @@ async def _run_llm_formatter_whole(state: SOPState) -> str:
     text = await asyncio.to_thread(_invoke_bedrock_direct, FORMATTER_SYSTEM_PROMPT, user_prompt)
     text = _strip_code_fences(text)
 
-    try:
-        parsed = json.loads(text)
-        if "formatted_markdown" in parsed:
-            base_md = parsed["formatted_markdown"]
-        else:
-            logger.warning("Model returned JSON but missing formatted_markdown; using raw text.")
-            base_md = text
-    except Exception:
-        logger.warning("Formatter returned non-JSON response (whole); using raw output.")
+    base_md = _extract_formatted_markdown(text)
+    if not base_md:
+        logger.warning("Formatter whole: empty output after extraction; using raw text.")
         base_md = text
 
     # Apply header/footer once
@@ -302,15 +360,9 @@ async def _format_one_section(
     text = await asyncio.to_thread(_invoke_bedrock_direct, FORMATTER_SYSTEM_PROMPT, user_prompt)
     text = _strip_code_fences(text)
 
-    try:
-        parsed = json.loads(text)
-        if "formatted_markdown" in parsed:
-            formatted = parsed["formatted_markdown"]
-        else:
-            logger.warning("Section %s: JSON missing formatted_markdown; using raw text.", section_key)
-            formatted = text
-    except Exception:
-        logger.warning("Section %s: non-JSON response; using raw output.", section_key)
+    formatted = _extract_formatted_markdown(text)
+    if not formatted:
+        logger.warning("Section %s: empty after extraction; using raw text.", section_key)
         formatted = text
 
     return section_key, str(formatted or "").strip()
