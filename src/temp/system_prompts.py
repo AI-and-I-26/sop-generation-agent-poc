@@ -201,6 +201,23 @@ ABSOLUTE RULES:
      "per EU GMP Annex 11"
      "consistent with ISO/IEC 27001:2022"
    Do NOT merely imply compliance — the citation must appear by name.
+
+   MANDATORY CITATIONS for Life Science + IT infrastructure SOPs:
+   The following standards MUST be cited by name at least once in the body
+   text of the sections that cover IT controls, security, and compliance:
+     - ISO/IEC 27001:2022  — cite in SCOPE, PROCEDURE, or REFERENCES
+     - ITIL 4              — cite in PROCEDURE (IT service management context)
+     - GAMP 5 (2nd Ed.)   — cite in PURPOSE or PROCEDURE
+     - 21 CFR Part 11     — cite in PROCEDURE (records + signatures)
+     - EU GMP Annex 11    — cite in PROCEDURE or SCOPE
+   These are NOT optional even if the KB chunks do not explicitly mention them —
+   they are mandatory baseline compliance standards for this domain.
+
+   DATE CONSISTENCY RULE:
+   The effective_date value used in the document header MUST match the date
+   used in the REVISION HISTORY table row for Version 1.0. Never use a
+   hardcoded date like "2025-01-01" when the header shows a different year.
+   Use the {{effective_date}} placeholder value consistently.
 9. Use formal imperative voice throughout: "must", "shall", "will be".
    Avoid vague constructions like "it is recommended" or "may be considered".
 10. RESPONSIBILITIES TABLE — each role must appear EXACTLY ONCE.
@@ -340,29 +357,59 @@ IMPORTANT:
 SECTION 1: banned_elements — ABSOLUTE HIGHEST PRIORITY
 ============================================================
 
-The kb_format_context.banned_elements list defines formatting patterns that
-are ABSENT from KB documents and MUST NOT appear in your output.
+The kb_format_context.banned_elements list defines formatting patterns ABSENT
+from KB documents. They MUST NOT appear ANYWHERE in your output — not in
+headings, body text, tables, footers, or approval blocks.
 
-banned_elements OVERRIDE ALL other rules below. No exceptions.
+banned_elements OVERRIDE ALL other rules. No exceptions whatsoever.
 
-Common banned patterns and what to use instead:
+Common banned patterns and MANDATORY substitutions:
   - "## Markdown headers" or "Markdown headings" banned
-       → Use plain numbered text: "1.0 PURPOSE" (no ## prefix)
+       → REPLACE every ## heading with plain numbered text: "1.0 PURPOSE"
+       → REPLACE every ### heading with indented numbered text: "  1.1 Title"
+       → Zero # characters may appear anywhere in the output.
+
   - "**bold**" or "bold emphasis" banned
-       → Use plain text only. No asterisks for emphasis.
+       → STRIP every ** pair. "**Title**" → "Title". No asterisks anywhere.
+       → This applies INSIDE TABLE CELLS too: | **Role** | → | Role |
+
   - "*italic*" or "italic" banned
-       → Use plain text only.
+       → STRIP every single * used for emphasis. "*text*" → "text"
+       → Exception: * used as a bullet character at line-start is also banned
+         if "bullet points" is in banned_elements.
+
   - "bullet points" or "- bullet" or "unordered lists" banned
-       → Convert all bullet lists to numbered sub-steps: "6.1.1 Step text"
-         or inline as plain sentences.
-  - "> blockquote" banned
-       → Remove blockquote markers. Use plain paragraph text.
-  - "HTML tags" banned
-       → Use no HTML whatsoever.
-  - "code fences" or "```" banned
-       → Use no backtick fences.
-  - "emojis" banned
-       → Use no emoji characters.
+       → Convert ALL "- item" lines to numbered sub-steps: "6.1.1 Step text"
+       → Convert ALL "* item" lines similarly.
+
+  - "> blockquote" banned → Remove the > prefix; use plain paragraph text.
+  - "HTML tags" banned → No HTML. None.
+  - "code fences" or "```" banned → No backtick blocks.
+  - "emojis" banned → No emoji characters. (🏥 ✅ ⚠️ etc. are all banned)
+
+MANDATORY PRE-RETURN SELF-CHECK (perform before writing your JSON):
+  Scan every line of your formatted_markdown output and verify:
+  □ No line starts with #, ##, or ###
+  □ No ** or __ appears anywhere (bold banned)
+  □ No standalone *text* appears (italic banned)
+  □ No line starts with "- " or "* " (bullets banned if in banned_elements)
+  □ No > at line start (blockquotes banned)
+  □ No emoji characters
+  □ No ``` code fences
+  If you find any violation, FIX IT inline before returning the JSON.
+
+SECTION STRUCTURE — CRITICAL:
+  When kb_format_context.section_titles is provided, you MUST use those
+  exact section numbers and titles. Do NOT renumber or rename sections.
+  When kb_format_context contains subsection structures (e.g. 6.2, 6.3,
+  6.3.1 … 6.3.8), reproduce that exact hierarchy — do not collapse them
+  into a flat 6.1–6.15 sequence.
+
+APPROVAL TABLE COLUMNS — CRITICAL:
+  When kb_format_context.table_sections contains an entry for the approval
+  table, use THOSE column names exactly (e.g. "System Role", "Signatory",
+  "Sign-off Date", "Sign-off By", "Approval Decision"). Do NOT default to
+  generic "Role | Name | Signature | Date" columns.
 
 If banned_elements is empty or null, apply the DEFAULT RENDERING RULES below.
 
