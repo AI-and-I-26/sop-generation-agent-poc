@@ -1,1 +1,13 @@
-
+A few comments and further questions for discussion...
+There will be a one-time cost to retrieve the data from Hubstor and write it to S3.  This cost will consist of:
+Azure retrieval charges for lower storage tiers
+Azure egress charges for Internet traffic, which should be direct to S3 on the public Internet rather than via the VPN tunnel, as this would add transit charges on the AWS side for inspection
+AWS S3 transaction charges for PUT requests to the target bucket(s) as Internet ingress is free, but using S3 is not.  Any tiering post-ingestion would also incur charges
+At least 70% of the Hubstor data appears to be owned by Early Discovery sites which are being divested.  The cost of this data, and any transfer charges for it to be extracted from Hubstor, can be billed to IQVia.  It may also be that IQVia agree to it being deleted if they do not want to retain it
+Before we move anything, we should first identify what is there and apply any data retention policies which are appropriate to ensure we minimize the holding before paying to extract it.  Do we have details of the owners and a breakdown of data by type/age?
+We also need to look at further costs in Azure and ensure that we estimate these in AWS, including backup and any DR provision. If there is none in Azure, we can assume there will be none in AWS.  What protections are currently in place?
+Do we understand the rationale behind the choice of storage tier the business has made?  Does the business?  Is this verified by usage data, or is there further opportunity to optimize the storage either before we move it, or on migration?
+Has any compression been applied to the data before it was written to Hubstor, or is there an opportunity to optimize the storage on migration or before?  Typically, scientific staff make no effort to compress data because they believe it is too much effort, or modifies the original files, or requires more effort to recover.  This is partially correct, but for a saving of 60-70% of our costs, it's a price worth paying especially as most of this data will never be retrieved.  Logical boundaries which already exist can be used to implement this, e.g. a study or experiment, or work order.  As an example, some of the Early Discovery data is likely to be InCell instrument data sets, and before acquisition I implemented an archiving system to S3-compatible on-prem storage with a script to capture data, and this regularly returned 80% compression or more on experiments of 1GB of uncompressed data.  None of the files is useful in isolation - recovery will always be of the whole experiment.  For that reason, each experiment was stored as a Zip archive.
+ 
+All of this will likely be needed to generate the detailed business case, but for L1-L2 an estimate is probably good enough
+ 
