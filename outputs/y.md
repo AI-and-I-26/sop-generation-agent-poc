@@ -1,15 +1,3 @@
-Orphan Resource Types
-
-Test/Dev — spun up for a project, never decommissioned
-Ghost — running in cloud, zero CMDB record
-No-owner — in CMDB but owner blank, generic, or a leaver
-Zombie — has owner, zero traffic/usage for 30+ days
-Duplicate — same workload running twice across accounts/regions
-Shadow IT — provisioned outside approved process, no tagging
-Stranded reservation — Reserved Instance with no matching active workload
-Idle load balancer — no backend targets or zero requests
-Unattached disk/snapshot — detached from any VM, accumulating cost
-Oversized — under 10% CPU/memory consistently
-Stale image/AMI — not used in 90+ days
-Unused IP — allocated, not associated to any resource
-Empty VPC/resource group — scaffolding left after project teardown
+KPI 1 — Financial: Cumulative Cost Savings from Owner Attribution
+Since CMDB work completes in June 2026 and savings flow from July onwards, this works well as a monthly cumulative savings KPI. The logic is that once owners are assigned, you can identify and eliminate orphaned/untagged resources, right-size workloads, and enforce cost accountability — generating measurable cloud spend reduction each month.KPI 2 — Operational: % of Missing Ownership Tags (Baseline vs. Target)
+Yes, this is a classic and very valid KPI. You start with a baseline (e.g., "X% of CMDB records are missing an owner tag today") and track progress toward a target (e.g., 95%+ tagged by end of June). It's simple, auditable, and directly tied to project delivery.
