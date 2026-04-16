@@ -3,15 +3,15 @@
 | Field | Value |
 |---|---|
 | **Title** | Standard Operating Procedure for Responsible AI Use in Global Technology |
-| **Document ID** | SOP-20260311-2028 |
+| **Document ID** | SOP-20260416-1058 |
 | **Version** | 1.0 |
-| **Status** | {{status}} |
-| **Effective Date** | 11-Mar-2026 |
-| **Classification** | {{classification}} |
+| **Status** | CURRENT |
+| **Effective Date** | 16-Apr-2026 |
+| **Classification** | INTERNAL |
 | **Industry** | Life Sciences and Regulated IT (GxP-Aligned) |
 | **Target Audience** | Global Technology Teams, AI Developers, Cloud Engineers, System Administrators, and Risk/Compliance Stakeholders |
 
-> **{{status}} — {{classification}}**
+> **CURRENT — INTERNAL**
 > This document is subject to controlled document management.
 > Approval signatures (wet or electronic per 21 CFR Part 11) are required
 > before this SOP is placed into operational use.
@@ -19,498 +19,557 @@
 
 ---
 
+## Document Approval
+
+| Role | Name | Signature | Date |
+|---|---|---|---|
+| Author | TBD | | 16-Apr-2026 |
+| Reviewer | TBD | | |
+| Approver | TBD | | |
+
+---
+
 1.0 PURPOSE
 
-This Standard Operating Procedure (SOP) establishes the requirements, controls, and governance framework for the responsible development, deployment, validation, and ongoing management of Artificial Intelligence (AI) systems within the Global Technology function of a life sciences organisation. This SOP is subject to controlled document management; all revisions require approval signatures executed in accordance with 21 CFR Part 11 for electronic records, or wet-ink signatures where applicable, and every page of this document must carry a header and footer displaying the document title, document identifier, revision number, effective date, and page number in the format 'Page x of y', together with a 'CURRENT — Confidential and Proprietary' status designation.
+This Standard Operating Procedure (SOP) establishes the governance framework, procedural requirements, and compliance obligations for the responsible development, deployment, operation, and retirement of Artificial Intelligence (AI) systems within the Global Technology function of a life sciences organisation. This SOP is subject to controlled document management; approval signatures, whether wet or electronic, must be obtained in accordance with 21 CFR Part 11 prior to issuance, and every page of this document must carry a header displaying the document title, document number, revision number, effective date, and page number in the format 'x of y'.
 
-This SOP ensures that all AI systems operating within or interfacing with GxP-regulated environments comply with applicable regulatory requirements, including but not limited to Computer System Validation (CSV) obligations, the organisation's Data Integrity Policy (GLBL-POL-00007), SOX compliance requirements for applicable financial applications such as SAP, and change management obligations governed by GIT-SOP-00001. All AI systems that generate, modify, or process electronic records subject to regulatory oversight must be developed, qualified, and maintained in a manner consistent with GAMP 5 (Second Edition, 2022), EU GMP Annex 11, and 21 CFR Part 11.
+All AI systems supporting regulated operations must be qualified and maintained in a validated state consistent with GAMP 5 (Second Edition, 2022) guidelines for software development and validation in GxP environments. This SOP ensures that AI tools and platforms used across global technology teams, cloud engineering, system administration, and risk and compliance functions operate in a manner that is transparent, auditable, and aligned with applicable regulatory standards, including EU GMP Annex 11 and ISO/IEC 27001:2022.
 
-This SOP further establishes that all vendors supplying AI tools or platforms must receive formal approval prior to use in accordance with the Global Vendor Program. Retention, transfer, and disposal of GxP-regulated materials produced by or associated with AI systems must comply with GLBL-POL-00078, and secure destruction of confidential documents must comply with GLBL-POL-00050. A risk-based approach shall be applied to all AI system documentation, whereby the level of planning detail reflects the perceived size, impact, risk, complexity, and novelty of the system. All qualified AI systems and supporting infrastructure components must be registered in the Configuration Management Database (CMDB) upon acceptance into the production environment.
+This SOP mandates adherence to the organisation's Data Integrity Policy (GLBL-POL-00007) for all electronic records managed by or generated through AI systems, and to the Retention, Transfer or Disposal of GxP Regulated Materials policy (GLBL-POL-00078) for data outputs from AI systems used in regulated contexts. The Secure Destruction of Confidential Documents policy (GLBL-POL-00050) applies to all AI-generated confidential outputs. Where AI systems support financial operations, such as SAP-integrated tools, SOX compliance requirements apply.
+
+All changes to AI system configurations must follow the Change Management Process defined in GIT-SOP-00001 before deployment. Vendor-supplied AI technology must be approved prior to use in accordance with the Global Vendor Program. Access control to AI systems must be managed, controlled, and monitored in accordance with applicable SOPs, including GLBL-SOP-00080. A risk-based approach must be applied to AI system documentation, whereby the level of detail in plans reflects the perceived size, impact, risk, complexity, and novelty of the system. A Configuration Management Database (CMDB) entry must be maintained for all AI systems once accepted into production, consistent with infrastructure qualification practices. A project file containing all applicable formal documentation must be developed and maintained for all AI development projects and must be readily available for inspection.
 
 2.0 SCOPE
 
-This SOP applies to all Global Technology personnel, AI developers, cloud engineers, system administrators, and risk and compliance stakeholders involved in the design, development, deployment, operation, maintenance, and retirement of artificial intelligence systems and AI-enabled tools within the organisation's technology environment. This document is subject to controlled document management; all revisions require approval signatures executed in accordance with 21 CFR Part 11 for electronic records, and every page of this SOP must carry a header and footer displaying the document title, document ID, revision number, effective date, and page number in the format page x of y, together with the status designation CURRENT and the Confidential and Proprietary classification.
+This SOP applies to all AI systems, tools, models, and automated decision-support technologies developed, procured, deployed, or operated by Global Technology teams within the organisation's life sciences and regulated IT environment. The requirements set forth herein govern the responsible use of AI across all phases of the system lifecycle, from initial concept and vendor selection through development, validation, deployment, and decommissioning. This SOP is a controlled document subject to formal document management; approval signatures, whether wet or electronic, must be obtained in accordance with 21 CFR Part 11 prior to implementation. Every page of this document must carry a header displaying the document number, revision number, effective date, title, and page number.
 
-  2.1 Included Systems and Activities: This SOP governs the following systems, activities, and personnel:
+  2.1 Included Within Scope
 
-    2.1.1 All AI systems and AI-enabled tools used in life sciences operations that are subject to GxP alignment requirements, including systems that generate, process, or store electronic records subject to Data Integrity Policy GLBL-POL-00007.
+  The following systems, activities, personnel, and compliance obligations are covered by this SOP:
 
-    2.1.2 Computer systems subject to Computer System Validation (CSV) requirements, including AI-driven systems that support or interface with GxP-regulated processes, for which a formal Development Plan must be established as part of SDLC documentation.
+    2.1.1 All AI and machine learning systems, including vendor-supplied and internally developed models, used in support of GxP-regulated operations, financial reporting systems (e.g., SAP subject to SOX compliance), and broader Global Technology functions.
 
-    2.1.3 Financial and enterprise applications subject to SOX compliance requirements, including but not limited to SAP and any AI-augmented modules integrated therein.
+    2.1.2 All electronic records and data outputs generated by or managed through AI systems, which must adhere to the Data Integrity Policy (GLBL-POL-00007) and be maintained in a validated state consistent with EU GMP Annex 11 and GAMP 5 (Second Edition, 2022) guidelines.
 
-    2.1.4 All qualified infrastructure components and AI systems for which changes must follow the established change management process defined in GIT-SOP-00001, and for which requalification scope must be assessed upon every approved change.
+    2.1.3 All AI system configurations, updates, and changes, which must follow the Change Management Process (RFC process per GIT-SOP-00001) and be assessed for requalification impact prior to deployment.
 
-    2.1.5 All AI development projects for which a project file must be maintained containing all applicable formal documentation, including IQP, As Built Documents, Test Scripts, Baseline Configuration Documents, and IQR, each approved by dated signature before testing commences.
+    2.1.4 Vendor and vendor-supplied AI technologies, which must be reviewed and approved in accordance with the Global Vendor Program before use in any regulated or production environment.
 
-    2.1.6 All qualified AI systems and infrastructure components that must be registered in the Configuration Management Database (CMDB) upon acceptance and maintained therein throughout the system lifecycle.
+    2.1.5 Access control management for all AI systems, which must be properly administered, monitored, and audited in accordance with applicable access control SOPs, including GLBL-SOP-00080, and consistent with ISO/IEC 27001:2022 information security management requirements.
 
-    2.1.7 Vendor-supplied AI tools and services, which must receive vendor approval prior to use in accordance with the Global Vendor Program.
+    2.1.6 Retention, transfer, and disposal of data outputs from AI systems used in regulated contexts, governed by the Retention, Transfer or Disposal of GxP Regulated Materials Policy (GLBL-POL-00078) and the Secure Destruction of Confidential Documents Policy (GLBL-POL-00050).
 
-    2.1.8 All electronic records and AI-generated outputs subject to retention, transfer, or disposal requirements under GLBL-POL-00078, and confidential documentation subject to secure destruction requirements under GLBL-POL-00050.
+    2.1.7 All AI development projects, for which a project file containing applicable formal documentation must be developed, maintained, and made readily available for inspection, with the level of documentation detail reflecting the perceived size, impact, risk, complexity, and novelty of the system in accordance with a risk-based approach consistent with GAMP 5 (Second Edition, 2022).
 
-  2.2 Excluded Systems and Activities: The following are outside the scope of this SOP:
+    2.1.8 Peer review of AI model code and design specifications, particularly for GxP-aligned AI systems; all peer review activities must be documented and retained as part of the project file.
 
-    2.2.1 Non-GxP, non-SOX, and non-regulated personal productivity tools that do not interact with qualified systems, regulated data, or AI-generated outputs used in regulated decision-making.
+    2.1.9 Configuration Management Database (CMDB) entries, which must be created and maintained for all AI systems once accepted into production, consistent with infrastructure qualification practices and ITIL 4 service management principles.
 
-    2.2.2 Research and exploratory AI prototypes operating exclusively within isolated sandbox environments that have no connectivity to production systems and do not process regulated or confidential data, provided such prototypes are formally designated as out-of-scope through the organisation's risk classification process.
+    2.1.10 All Global Technology personnel involved in the design, development, testing, deployment, administration, or oversight of AI systems, including AI Developers, Cloud Engineers, System Administrators, and Risk and Compliance Stakeholders.
 
-  2.3 Geographic and Organisational Applicability: This SOP applies globally across all organisational sites, business units, and third-party engagements where the organisation's AI systems are deployed or maintained. All personnel, contractors, and vendors operating within scope must comply with the requirements set forth herein. A risk-based approach shall be applied to documentation and qualification activities, whereby the level of detail in planning documentation reflects the perceived size, impact, risk, complexity, and novelty of the system under consideration.
+  2.2 Excluded From Scope
+
+  The following are not covered by this SOP:
+
+    2.2.1 AI tools used solely for personal productivity purposes that have no interface with regulated systems, GxP data, financial reporting data, or confidential organisational information, and that have not been provisioned through the Global Technology environment.
+
+    2.2.2 Research and exploratory proof-of-concept activities conducted entirely within isolated, non-production sandbox environments that have no connectivity to regulated or production systems; such activities remain subject to applicable data classification and information security policies.
+
+    2.2.3 Non-technology business process activities that do not involve the development, configuration, or operation of AI systems.
 
 3.0 RESPONSIBILITIES
 
-The following roles and responsibilities apply to all personnel involved in the development, deployment, administration, oversight, and use of AI-enabled systems within the Global Technology function. All personnel must complete role-specific training before executing any qualification, development, or administrative activity associated with AI systems. Training records must be maintained in accordance with applicable GxP requirements and made available for inspection upon request. Responsibilities are assigned in alignment with GxP principles, Computer System Validation (CSV) requirements, Data Integrity policy GLBL-POL-00007, and change management SOP GIT-SOP-00001.
+The following roles and responsibilities apply to all personnel involved in the development, deployment, operation, oversight, and governance of AI systems within Global Technology. Each role must ensure that assigned responsibilities are fulfilled in accordance with GxP requirements, GAMP 5 (Second Edition, 2022), 21 CFR Part 11, EU GMP Annex 11, ISO/IEC 27001:2022, and all applicable organisational policies. Personnel must complete role-specific training before executing any AI qualification or operational activity, and training records must be maintained per applicable GxP requirements.
 
 | ROLE | RESPONSIBILITY |
 |---|---|
-| Global Technology Leadership | Accountable for the governance and strategic oversight of all AI-enabled systems within the Global Technology function, ensuring alignment with GxP, SOX, and CSV requirements. |
-| Global Technology Leadership | Responsible for approving the formal Development Plan for all GxP AI systems as part of SDLC documentation prior to project initiation. |
-| Global Technology Leadership | Responsible for ensuring that a Configuration Management Database (CMDB) entry is established and maintained for all qualified AI systems and infrastructure components upon acceptance. |
-| Global Technology Leadership | Responsible for ensuring that all changes to qualified AI systems are processed through formal change control in accordance with GIT-SOP-00001 and that requalification scope is assessed for every approved change. |
-| Global Technology Leadership | Responsible for ensuring that vendor approval is obtained prior to the use of any AI tool or platform, in accordance with the Global Vendor Program. |
-| Global Technology Leadership | Responsible for ensuring that annual account access reviews are conducted for all qualified AI systems and that results are documented and retained. |
-| AI Developers and Data Scientists | Responsible for developing AI models and systems in accordance with GxP-aligned SDLC documentation requirements, including the preparation and maintenance of a formal project file containing all applicable documentation readily available for inspection. |
-| AI Developers and Data Scientists | Responsible for applying a risk-based approach to documentation, ensuring that the level of detail in planning documentation reflects the perceived size, impact, risk, complexity, and novelty of the AI system. |
-| AI Developers and Data Scientists | Responsible for ensuring that peer review is documented for all GxP AI systems during the design and build phases, in accordance with CSV requirements. |
-| AI Developers and Data Scientists | Responsible for ensuring that all qualification documents — including the Installation Qualification Plan (IQP), As Built Document, Test Scripts, Baseline Configuration Documents, and Installation Qualification Report (IQR) — are approved by dated signature before testing commences. |
-| AI Developers and Data Scientists | Responsible for ensuring that AI-generated outputs are treated as electronic records subject to Data Integrity policy GLBL-POL-00007 and that data integrity controls are embedded at the point of design. |
-| AI Developers and Data Scientists | Responsible for classifying and documenting deviations identified during development or testing, including root cause analysis and impact assessment, and for escalating deviations to QA for review and approval prior to proceeding. |
-| Cloud Engineers and System Administrators | Responsible for the installation, configuration, and ongoing administration of AI-enabled infrastructure in accordance with approved qualification documentation and baseline configuration standards. |
-| Cloud Engineers and System Administrators | Responsible for developing and maintaining technical work instructions for commonly repeated AI system administration tasks, including monitoring, capacity management, and lifecycle management. |
-| Cloud Engineers and System Administrators | Responsible for ensuring that all changes to qualified infrastructure are submitted through formal change control per GIT-SOP-00001 and that requalification is triggered when changes affect qualified AI systems or infrastructure components. |
-| Cloud Engineers and System Administrators | Responsible for maintaining CMDB entries for all qualified AI systems and infrastructure components, ensuring records are current and accurate at all times. |
-| Cloud Engineers and System Administrators | Responsible for implementing physical data centre safety practices, including ESD precautions, hot/cold aisle access controls, rack safety protocols, and electrical hazard awareness, when performing hands-on infrastructure activities. |
-| Cloud Engineers and System Administrators | Responsible for executing cybersecurity incident response procedures, including detection, containment, and escalation of security events affecting AI systems, in accordance with the organisation's incident response framework. |
-| Risk and Compliance Stakeholders | Responsible for providing oversight and assurance that all AI-enabled systems comply with applicable GxP, SOX, CSV, and data integrity requirements, including Data Integrity policy GLBL-POL-00007. |
-| Risk and Compliance Stakeholders | Responsible for reviewing and approving all deviation reports associated with qualified AI systems, including assessment of root cause, impact, and corrective and preventive actions (CAPAs) prior to system release or continued operation. |
-| Risk and Compliance Stakeholders | Responsible for ensuring that retention, transfer, and disposal of GxP-regulated materials generated by or associated with AI systems comply with GLBL-POL-00078, and that secure destruction of confidential documents complies with GLBL-POL-00050. |
-| Risk and Compliance Stakeholders | Responsible for conducting or coordinating annual account access reviews for all qualified AI systems and for ensuring that review outcomes are documented, actioned, and retained as controlled records. |
-| Risk and Compliance Stakeholders | Responsible for assessing the compliance impact of proposed changes to qualified AI systems and for confirming that requalification scope has been appropriately defined before change implementation proceeds. |
-| End Users of AI-Enabled Systems | Responsible for using AI-enabled systems only in accordance with approved procedures, user access privileges, and applicable training requirements, and must not operate any AI system for which role-specific training has not been completed and documented. |
-| End Users of AI-Enabled Systems | Responsible for reporting anomalies, unexpected outputs, or potential data integrity concerns arising from AI-enabled systems to the system owner or designated support contact in a timely manner. |
-| End Users of AI-Enabled Systems | Responsible for ensuring that AI-generated outputs used in GxP-regulated activities are reviewed, verified, and documented in accordance with Data Integrity policy GLBL-POL-00007 before those outputs are relied upon for regulated decisions or records. |
-| End Users of AI-Enabled Systems | Responsible for adhering to cybersecurity awareness requirements and for escalating suspected security incidents involving AI-enabled systems to the appropriate IT security contact without delay. |
+| Chief Information Officer (CIO) / Head of Global Technology | Provides executive sponsorship and accountability for responsible AI use across Global Technology; ensures adequate resources are allocated for AI governance, qualification, and compliance activities; approves the overall AI governance framework in alignment with GxP and SOX requirements. |
+| AI Governance Lead / AI Programme Manager | Owns and maintains this SOP and associated AI governance documentation; coordinates cross-functional AI risk assessments; ensures all AI systems are inventoried in the Configuration Management Database (CMDB) upon acceptance into production; oversees adherence to the risk-based approach for AI system documentation consistent with GAMP 5 (Second Edition, 2022); chairs AI governance review forums. |
+| AI Developer / Machine Learning Engineer | Develops AI models and associated code in accordance with GAMP 5 (Second Edition, 2022) software development and validation guidelines; conducts and documents peer review of AI model code and design specifications, particularly for GxP-aligned systems; maintains a project file for all AI development projects containing all applicable formal documentation, readily available for inspection; ensures all changes to AI system configurations follow the Change Management Process per GIT-SOP-00001 before deployment. |
+| Cloud Engineer / System Administrator | Provisions, configures, and maintains infrastructure supporting AI systems in a qualified and validated state; manages CMDB entries for all AI systems consistent with infrastructure qualification practices; implements and monitors access controls for AI systems in accordance with GLBL-SOP-00080 and ISO/IEC 27001:2022; ensures physical and logical security controls are applied per EU GMP Annex 11 and applicable IT security SOPs. |
+| Validation / Qualification Lead | Ensures all AI systems supporting regulated operations are qualified and maintained in a validated state in accordance with applicable SOPs and GAMP 5 (Second Edition, 2022); applies a risk-based approach to determine the level of validation documentation required, reflecting the size, impact, risk, complexity, and novelty of each AI system; reviews and approves qualification evidence and deviation reports prior to system release. |
+| Quality Assurance (QA) Representative | Reviews and approves AI system qualification documentation, deviations, and change control records to ensure GxP compliance; verifies adherence to the Data Integrity policy (GLBL-POL-00007) for all electronic records managed by or generated through AI systems; reviews AI-related deviations and ensures root cause analysis and corrective actions are completed and documented; approves requalification scope assessments following approved changes per GIT-SOP-00001. |
+| Risk and Compliance Manager | Conducts and maintains AI risk assessments in alignment with ISO/IEC 27001:2022 and applicable GxP frameworks; monitors compliance with SOX requirements for AI systems used in financial operations such as SAP; ensures vendor and vendor-supplied AI technology is approved prior to use in accordance with the Global Vendor Programme; tracks and reports on AI-related compliance obligations and audit findings. |
+| Data Steward / Data Owner | Ensures data inputs and outputs of AI systems comply with the Data Integrity policy (GLBL-POL-00007); oversees the retention, transfer, and disposal of data outputs from AI systems used in regulated contexts in accordance with Retention, Transfer or Disposal of GxP Regulated Materials policy (GLBL-POL-00078); ensures secure destruction of AI-generated confidential outputs per Secure Destruction of Confidential Documents policy (GLBL-POL-00050). |
+| Information Security Officer (ISO) | Defines and enforces cybersecurity controls for AI systems consistent with ISO/IEC 27001:2022; oversees access control management for AI systems per GLBL-SOP-00080; leads cybersecurity incident response activities involving AI systems, including detection, containment, and escalation; ensures AI system security posture is reviewed as part of change control assessments per GIT-SOP-00001. |
+| IT Service Management Lead | Ensures AI system incidents, service requests, and changes are managed through established ITIL 4-aligned IT service management processes; maintains service continuity for AI systems supporting regulated operations; coordinates with the Validation Lead and QA Representative to ensure change management activities per GIT-SOP-00001 are reflected in the service management toolset. |
+| All Personnel Using AI Systems | Use AI systems only for approved and authorised purposes in accordance with this SOP and applicable policies; complete mandatory role-specific training before operating any AI system in a regulated context; report suspected AI system anomalies, data integrity concerns, or security incidents to the appropriate team immediately; comply with access control requirements per GLBL-SOP-00080 and data handling requirements per GLBL-POL-00007. |
 
 4.0 DEFINITIONS
 
-The following terms and definitions apply throughout this Standard Operating Procedure. All personnel responsible for the development, deployment, validation, monitoring, or governance of AI and ML systems within the global technology environment must interpret these terms as defined below. These definitions are aligned with GxP regulatory expectations, Computer System Validation (CSV) requirements, and applicable industry frameworks including GAMP 5 (Second Edition, 2022) and EU GMP Annex 11.
+The following terms and definitions apply to this Standard Operating Procedure:
 
-Artificial Intelligence (AI): A class of computer-based systems designed to perform tasks that typically require human intelligence, including reasoning, learning, pattern recognition, natural language processing, and decision-making. In the context of this SOP, AI encompasses both rule-based systems and systems that learn from data.
-
-Machine Learning (ML): A subset of Artificial Intelligence in which algorithms are trained on datasets to identify patterns, make predictions, or generate outputs without being explicitly programmed for each task. ML models used in GxP-regulated environments are subject to Computer System Validation requirements and must be documented in accordance with GAMP 5 (Second Edition, 2022).
-
-GxP-Regulated Environment: Any operational context in which Good Practice (GxP) quality guidelines apply, including Good Manufacturing Practice (GMP), Good Clinical Practice (GCP), Good Laboratory Practice (GLP), and Good Distribution Practice (GDP). AI and ML systems operating within a GxP-regulated environment must comply with applicable regulatory requirements, including 21 CFR Part 11, EU GMP Annex 11, and the organisation's Data Integrity Policy (GLBL-POL-00007).
-
-Responsible AI Principles: A set of ethical and operational standards governing the design, development, deployment, and retirement of AI systems. These principles include fairness, accountability, transparency, explainability, safety, privacy, and human oversight. All AI systems deployed within the global technology environment must be developed and maintained in accordance with these principles and consistent with applicable regulatory and organisational requirements.
-
-AI Model Validation: The formal process of confirming that an AI or ML model performs as intended within its defined operational parameters and produces reliable, accurate, and reproducible outputs. AI model validation is a component of Computer System Validation (CSV) and must be executed in accordance with GAMP 5 (Second Edition, 2022), with all qualification documents — including Installation Qualification Plans (IQP), Test Scripts, and Installation Qualification Reports (IQR) — approved by dated signature prior to testing commencement.
-
-Algorithmic Bias: Systematic and repeatable errors in AI or ML model outputs that result in unfair or inequitable outcomes, typically arising from flawed assumptions in the model design, unrepresentative training data, or inappropriate feature selection. Algorithmic bias must be identified, assessed, and mitigated as part of the risk-based approach to AI system development and validation.
-
-Fairness: The property of an AI system whereby its outputs and decisions do not systematically disadvantage any individual, group, or population based on protected or sensitive characteristics. Fairness assessments must be documented as part of the AI risk classification and model validation processes.
-
-Explainability: The degree to which the internal logic, decision pathways, and outputs of an AI or ML model can be understood and articulated in human-interpretable terms. Explainability is required for all AI systems used in regulated decision-making contexts and must be addressed in system design documentation consistent with EU GMP Annex 11 and GAMP 5 (Second Edition, 2022).
-
-Transparency: The principle that the existence, purpose, data inputs, limitations, and decision logic of an AI system are disclosed to relevant stakeholders, including end users, regulators, and oversight bodies. Transparency requirements must be reflected in system documentation maintained within the project file and the Configuration Management Database (CMDB).
-
-AI Risk Classification: A structured assessment process used to categorise AI systems according to the potential impact of their outputs on patient safety, data integrity, regulatory compliance, business operations, and ethical considerations. Risk classification determines the level of validation rigour, documentation depth, and governance controls required, consistent with the risk-based approach mandated by GAMP 5 (Second Edition, 2022) and the organisation's change management process (GIT-SOP-00001). Classifications are typically designated as high, medium, or low risk based on the perceived size, impact, complexity, and novelty of the system.
+| Term | Definition |
+|---|---|
+| Artificial Intelligence (AI) System | A machine-based system that, for a given set of objectives, makes predictions, recommendations, decisions, or generates content influencing real or virtual environments. In the context of this SOP, AI systems include machine learning models, large language models, generative AI tools, and automated decision-support systems deployed within Global Technology operations. |
+| GxP | A collective term for Good Practice quality guidelines and regulations applicable to life sciences industries, including Good Manufacturing Practice (GMP), Good Clinical Practice (GCP), Good Laboratory Practice (GLP), and Good Distribution Practice (GDP). All AI systems supporting GxP-regulated operations must be qualified and maintained in a validated state in accordance with applicable SOPs and GAMP 5 (Second Edition, 2022). |
+| GAMP 5 | Good Automated Manufacturing Practice, Fifth Edition (Second Edition, 2022), published by ISPE. A risk-based framework providing guidance on the validation and lifecycle management of automated systems used in GxP-regulated environments. GAMP 5 principles govern software development, validation, and documentation requirements for AI systems within scope of this SOP. |
+| Validated State | The condition of an AI system or automated tool that has been formally qualified, tested, and documented to demonstrate that it consistently performs its intended function within defined parameters, in accordance with applicable validation SOPs and GAMP 5 (Second Edition, 2022). |
+| 21 CFR Part 11 | Title 21 of the Code of Federal Regulations, Part 11, issued by the U.S. Food and Drug Administration (FDA). Establishes requirements for electronic records and electronic signatures used in regulated life sciences operations. All electronic records generated by or through AI systems in regulated contexts must comply with 21 CFR Part 11. |
+| EU GMP Annex 11 | The European Union Good Manufacturing Practice guideline governing computerised systems used in GxP-regulated manufacturing and operations. AI systems operating within EU-regulated environments must comply with EU GMP Annex 11 requirements for system validation, data integrity, and audit trails. |
+| ISO/IEC 27001:2022 | The international standard specifying requirements for establishing, implementing, maintaining, and continually improving an information security management system (ISMS). AI systems and associated infrastructure must be managed in accordance with ISO/IEC 27001:2022 to ensure appropriate information security controls are applied. |
+| Data Integrity | The assurance that data is complete, consistent, accurate, and maintained throughout its lifecycle, in accordance with the ALCOA+ principles (Attributable, Legible, Contemporaneous, Original, Accurate, plus Complete, Consistent, Enduring, and Available). All electronic records managed by or generated through AI systems must adhere to the Data Integrity Policy (GLBL-POL-00007). |
+| Configuration Management Database (CMDB) | A centralised repository that stores information about hardware, software, and system components (configuration items) and their relationships within the IT environment. A CMDB entry must be maintained for all AI systems once accepted into production, consistent with infrastructure qualification practices. |
+| Change Management Process (RFC) | The formal process by which all changes to AI system configurations, infrastructure, or associated components are requested, reviewed, approved, and implemented. All AI system changes must follow the established Change Management Process per GIT-SOP-00001 before deployment. |
+| Risk-Based Approach | A methodology in which the level of effort, documentation, and controls applied to an AI system is proportionate to the perceived size, impact, risk, complexity, and novelty of that system. This approach governs the depth of documentation required in AI project files and validation plans. |
+| Project File | A structured collection of formal documentation maintained for each AI development project, including design specifications, risk assessments, validation plans, test evidence, peer review records, and change history. Project files must be developed, maintained, and made readily available for inspection throughout the AI system lifecycle. |
+| Peer Review | A formal evaluation of AI model code, design specifications, or other technical artefacts conducted by qualified personnel independent of the original author. Peer review must be performed and documented for GxP-aligned AI systems to ensure accuracy, compliance, and fitness for purpose. |
+| Vendor-Supplied AI Technology | Any AI system, tool, model, or component procured from an external third-party supplier. Vendor-supplied AI technology must be approved prior to use in accordance with the Global Vendor Program, and the supplying vendor must be assessed for compliance with applicable quality and security requirements. |
+| Access Control | The policies, procedures, and technical mechanisms used to restrict and monitor access to AI systems and their associated data. Access control to AI systems must be properly managed, controlled, and monitored in accordance with applicable SOPs, including GLBL-SOP-00080. |
+| SOX (Sarbanes-Oxley Act) | The Sarbanes-Oxley Act of 2002, a U.S. federal law establishing requirements for financial reporting accuracy and internal controls. SOX compliance requirements apply to applicable AI-enabled applications, such as SAP, used in financial operations within scope of this SOP. |
+| Electronic Record | Any combination of text, graphics, data, audio, pictorial, or other information representation in digital form that is created, modified, maintained, archived, retrieved, or distributed by a computer system. Electronic records generated by AI systems in regulated contexts must comply with 21 CFR Part 11 and the Data Integrity Policy (GLBL-POL-00007). |
+| Secure Destruction | The irreversible elimination of confidential data or documents such that recovery is not possible. Secure destruction of AI-generated confidential outputs must be performed in accordance with the Secure Destruction of Confidential Documents Policy (GLBL-POL-00050). |
+| Retention, Transfer, or Disposal | The lifecycle management activities governing how GxP-regulated data and materials are retained for required periods, transferred between systems or parties, or disposed of at end of life. Data outputs from AI systems used in regulated contexts are subject to the Retention, Transfer or Disposal of GxP Regulated Materials Policy (GLBL-POL-00078). |
+| Responsible AI | The practice of designing, developing, deploying, and monitoring AI systems in a manner that is ethical, transparent, accountable, fair, and compliant with applicable regulatory and organisational requirements. Responsible AI use requires adherence to GxP principles, data integrity standards, access controls, and change management processes as defined in this SOP. |
 
 5.0 MATERIALS
 
-The following materials, documents, templates, and reference frameworks shall be available to all personnel responsible for executing, reviewing, or overseeing activities governed by this SOP. All listed materials must be maintained under controlled document management in accordance with the organisation's document control procedures and, where applicable, must comply with 21 CFR Part 11 for electronic records and signatures. Personnel must ensure that only current, approved versions of these materials are used. Superseded versions must be archived and must not be used for active qualification or compliance activities.
+The following materials, tools, systems, and reference documents are required to support the responsible use of AI within Global Technology operations. All AI systems and vendor-supplied technologies must be approved prior to use in accordance with the Global Vendor Program and must be maintained in a qualified and validated state consistent with GAMP 5 (Second Edition, 2022) and applicable GxP requirements. Access to all listed systems must be managed, controlled, and monitored in accordance with GLBL-SOP-00080 and 21 CFR Part 11 where electronic records and signatures are involved.
 
-  5.1 AI Governance Policy Documents
+  5.1 AI development and deployment platforms approved through the Global Vendor Program and registered in the Configuration Management Database (CMDB) upon acceptance into production.
 
-  The following governance documents establish the organisational policy framework for responsible AI use and must be consulted prior to initiating any AI development, deployment, or operational activity: the organisation's Responsible AI Use Policy; the Data Integrity Policy (GLBL-POL-00007), which must be adhered to for all electronic records including AI-generated outputs; the Retention, Transfer or Disposal of GxP Regulated Materials Policy (GLBL-POL-00078); the Secure Destruction of Confidential Documents Policy (GLBL-POL-00050); the Global Vendor Program policy governing vendor approval prior to use of any third-party AI tool or platform; and the Change Management SOP (GIT-SOP-00001), which must be followed for all modifications to qualified AI systems and infrastructure. A Configuration Management Database (CMDB) entry must be established and maintained for all qualified AI systems and infrastructure components upon acceptance into the production environment.
+  5.2 Cloud infrastructure and hosting environments used to deploy, operate, or monitor AI systems, qualified in accordance with EU GMP Annex 11 and ISO/IEC 27001:2022.
 
-  5.2 Regulatory Guidance References (FDA, EMA, ICH)
+  5.3 Model development and version control tools (e.g., code repositories, model registries) used for peer review and documentation of AI model code and design specifications.
 
-  The following regulatory guidance documents and standards must be referenced when designing, validating, and operating AI systems within GxP-aligned and regulated IT environments: FDA Guidance on Artificial Intelligence and Machine Learning in Software as a Medical Device (SaMD); FDA 21 CFR Part 11 (Electronic Records and Electronic Signatures); EU GMP Annex 11 (Computerised Systems); EMA Reflection Paper on the Use of Artificial Intelligence in the Lifecycle of Medicines; ICH Q9(R1) (Quality Risk Management); ICH Q10 (Pharmaceutical Quality System); GAMP 5 (Second Edition, 2022) for risk-based approaches to compliant GxP computerised systems; and applicable SOX compliance requirements for AI tools integrated with financial systems such as SAP. These references must be reviewed periodically to ensure alignment with current regulatory expectations.
+  5.4 Validation and qualification documentation templates, including Validation Plans, User Requirements Specifications (URS), Functional Specifications, and Test Protocols, maintained in the project file for each AI development project and available for inspection.
 
-  5.3 AI Risk Assessment Templates
+  5.5 Change Management tooling supporting the RFC process per Change Management Process SOP GIT-SOP-00001, used to manage and document all changes to AI system configurations prior to deployment.
 
-  Standardised risk assessment templates must be used for all AI systems subject to GxP or regulated IT requirements. Templates must support a risk-based approach consistent with ICH Q9(R1) and GAMP 5 (Second Edition, 2022), whereby the level of documentation detail reflects the perceived size, impact, risk, complexity, and novelty of the system under assessment. Required templates include: the AI System Risk Classification Template, used to categorise systems by GxP impact and business criticality; the Intended Use and Intended User Risk Assessment Form; the Algorithmic Bias and Fairness Assessment Template; and the Vendor Risk Assessment Form, completed prior to approval of any third-party AI vendor in accordance with the Global Vendor Program. All completed risk assessments must be approved by dated signature before qualification activities commence and must be retained in the applicable project file.
+  5.6 Risk assessment templates and tools supporting a risk-based approach to AI system documentation, calibrated to reflect the size, impact, risk, complexity, and novelty of each system.
 
-  5.4 Model Validation and Qualification Protocols
+  5.7 Data Integrity Policy GLBL-POL-00007, governing all electronic records managed by or generated through AI systems.
 
-  All AI systems used in GxP operations must satisfy Computer System Validation (CSV) requirements and must be supported by a complete set of qualification and validation documentation. The following documents must be prepared, approved, and retained in the project file for each applicable system: a formal Development Plan as part of the SDLC documentation; an Installation Qualification Protocol (IQP) and Installation Qualification Report (IQR); an As-Built Document; Baseline Configuration Documents; Test Scripts; and, where applicable, Operational Qualification (OQ) and Performance Qualification (PQ) protocols. All qualification documents must be approved by dated signature before testing commences, in accordance with GAMP 5 (Second Edition, 2022) and EU GMP Annex 11. Peer review of design and build phase documentation must be performed and recorded for all GxP systems. Requalification must be triggered whenever changes are made to qualified AI systems or infrastructure, with scope assessed in accordance with GIT-SOP-00001.
+  5.8 Retention, Transfer or Disposal of GxP Regulated Materials Policy GLBL-POL-00078, applicable to data outputs from AI systems used in regulated contexts.
 
-  5.5 Data Management and Privacy Frameworks
+  5.9 Secure Destruction of Confidential Documents Policy GLBL-POL-00050, applicable to AI-generated confidential outputs.
 
-  Data management activities associated with AI systems must be governed by the following frameworks and documents: the Data Integrity Policy (GLBL-POL-00007), which applies to all electronic records including AI-generated outputs and must be adhered to throughout the data lifecycle; applicable data privacy regulations including the EU General Data Protection Regulation (GDPR) and relevant national data protection legislation; the organisation's Data Classification Policy; and data retention and disposal procedures established under GLBL-POL-00078 and GLBL-POL-00050. AI systems processing personal data or sensitive health information must have a completed Data Protection Impact Assessment (DPIA) on file prior to go-live. All data management documentation must be maintained in the project file and must be available for inspection upon request.
+  5.10 Access control management systems and procedures, including GLBL-SOP-00080, governing user provisioning, de-provisioning, and periodic access reviews for all AI systems.
 
-  5.6 Incident Response and Deviation Forms
+  5.11 SOX compliance controls documentation applicable to AI systems supporting financial operations such as SAP.
 
-  The following forms and procedural documents must be available to all personnel involved in the operation, monitoring, and oversight of AI systems, and must be used whenever an incident, deviation, or non-conformance is identified: the AI Incident Report Form, used to document cybersecurity incidents, system failures, and unexpected AI outputs; the Deviation Report Form, which must capture deviation classification (critical, major, or minor), root cause analysis, and impact assessment in accordance with GxP requirements; the Corrective and Preventive Action (CAPA) Form; and the Emergency Escalation Contact List, which must include data centre safety contacts, cybersecurity incident response leads, and QA representatives. All completed incident and deviation records must be reviewed and approved by Quality Assurance prior to closure and must be retained in accordance with GLBL-POL-00078. Technical work instructions for AI system monitoring, capacity management, and lifecycle management must be developed, maintained, and made available to qualified personnel to support consistent and repeatable operational activities.
+  5.12 Training records management system for capturing and maintaining evidence of role-specific training completed prior to execution of any AI qualification or operational activity.
+
+  5.13 Incident and deviation management tools for recording, classifying, and resolving deviations identified during AI system qualification or operation.
+
+  5.14 Audit trail and logging infrastructure supporting 21 CFR Part 11 and EU GMP Annex 11 requirements for electronic records generated by AI systems.
 
 6.0 PROCEDURE
 
-This section defines the mandatory procedural requirements governing the responsible identification, assessment, development, validation, and deployment of Artificial Intelligence systems within the Global Technology organisation. All personnel executing activities described herein must have completed role-specific training prior to performing any qualification or AI lifecycle activity, and training records must be maintained in accordance with applicable GxP requirements. All AI systems that support or interact with GxP-regulated processes must comply with Computer System Validation (CSV) requirements, Data Integrity Policy GLBL-POL-00007, and applicable change management controls as defined in GIT-SOP-00001. This SOP is subject to controlled document management; approval signatures, whether wet or electronic, must comply with 21 CFR Part 11. Every page of this document must carry a header displaying the document title, document ID, revision number, effective date, and page x of y notation, together with a CURRENT, Confidential and Proprietary footer.
+The following subsections establish the mandatory procedural requirements governing the identification, classification, risk assessment, governance, data compliance, and validation of AI systems used within Global Technology operations. All personnel executing activities under this SOP must have completed role-specific training prior to performing any qualification or governance activity, and training records must be maintained in accordance with applicable GxP requirements. All AI systems supporting regulated operations must be qualified and maintained in a validated state consistent with GAMP 5 (Second Edition, 2022), EU GMP Annex 11, and 21 CFR Part 11. This SOP is subject to controlled document management; approval signatures — wet or electronic per 21 CFR Part 11 — are required, and every page must carry a header displaying the document title, document ID, revision number, effective date, and page x of y.
 
-  6.1 AI Use Case Identification and Intake
+  6.1 AI Use Case Identification and Classification
 
-  All proposed AI use cases must be formally identified, documented, and submitted through the AI Intake process before any development, procurement, or deployment activity commences. This process ensures that AI initiatives are aligned with organisational strategy, regulatory obligations, and responsible AI principles prior to resource commitment.
+    All proposed AI use cases must be formally identified, documented, and classified before any development, procurement, or deployment activity is initiated. This process ensures that the appropriate level of governance, validation, and compliance oversight is applied commensurate with the risk and regulatory impact of each use case.
 
-    6.1.1 The requesting business unit or technology team must complete an AI Use Case Intake Form, capturing the intended purpose, target user population, data inputs and outputs, system dependencies, and anticipated business benefit of the proposed AI system.
+    6.1.1 Use Case Identification
 
-    6.1.2 The intake submission must identify whether the proposed AI system will interact with, support, or produce outputs consumed by GxP-regulated processes, SOX-applicable applications such as SAP, or other controlled environments. This determination governs the applicable validation and compliance pathway.
+      The business or technology owner proposing an AI use case must submit a formal AI Use Case Intake Form to the AI Governance function. The intake submission must capture the following minimum information:
 
-    6.1.3 The AI Governance Lead or designated intake reviewer must assess each submission within ten business days of receipt and assign a preliminary classification of GxP, non-GxP regulated, or non-regulated to guide subsequent risk and ethical review activities.
+      6.1.1.1 A clear description of the intended AI capability, including the problem being solved and the expected outcome.
 
-    6.1.4 A project file must be established for every approved AI development or procurement initiative. This file must contain all applicable formal documentation and must be maintained in a location readily available for inspection by Quality Assurance and regulatory authorities.
+      6.1.1.2 The business process, system, or regulated activity the AI tool will interact with or support.
 
-    6.1.5 Any AI system sourced from an external vendor must not proceed beyond the intake stage until vendor approval has been obtained in accordance with the Global Vendor Program. Vendor qualification records must be retained within the project file.
+      6.1.1.3 The data inputs and outputs involved, including any personal data, patient data, or GxP-regulated electronic records.
 
-    6.1.6 Approved intake records must be stored in the controlled document management system and referenced in the Configuration Management Database (CMDB) entry established for the AI system upon acceptance into the qualified environment.
+      6.1.1.4 The proposed deployment environment (cloud, on-premises, hybrid) and any third-party or vendor-supplied AI technology.
 
-  6.2 AI Risk Classification and Impact Assessment
+      6.1.1.5 Identification of whether the use case involves a GxP-regulated process, a SOX-applicable financial operation (e.g., SAP-integrated workflows), or a non-regulated business function.
 
-  Every AI system that has passed the intake stage must undergo a formal risk classification and impact assessment before design or procurement activities proceed. The risk classification must follow a risk-based approach consistent with GAMP 5 (Second Edition, 2022) principles, whereby the level of documentation, testing rigour, and oversight is proportionate to the perceived size, impact, risk, complexity, and novelty of the system.
+    6.1.2 Use Case Classification
 
-    6.2.1 The responsible AI Developer or System Owner must complete a Risk Classification Record that assigns the AI system to one of the following tiers: Critical (direct patient safety, product quality, or data integrity impact), High (indirect GxP impact or significant SOX financial reporting relevance), Medium (operational impact with limited regulatory exposure), or Low (administrative or analytical tools with no regulated output).
+      Upon receipt of the intake submission, the AI Governance function must classify the use case into one of the following categories to determine the applicable governance pathway:
 
-    6.2.2 The impact assessment must evaluate the following dimensions at minimum: patient safety and product quality risk, data integrity risk as defined under GLBL-POL-00007, cybersecurity and information security risk consistent with ISO/IEC 27001:2022, operational continuity risk, and regulatory inspection risk.
+      6.1.2.1 GxP-Regulated AI: AI systems that directly or indirectly support, automate, or influence GxP-regulated activities, including manufacturing, laboratory operations, clinical data management, pharmacovigilance, or quality management. These systems are subject to full CSV/CSA validation requirements per GAMP 5 (Second Edition, 2022) and EU GMP Annex 11.
 
-    6.2.3 For AI systems classified as Critical or High, a formal Risk Assessment Report must be authored, peer-reviewed, and approved by dated signature from the System Owner and Quality Assurance representative before design activities commence.
+      6.1.2.2 SOX-Applicable AI: AI systems integrated with or influencing financial reporting processes or SOX-applicable applications such as SAP. These systems must comply with SOX internal control requirements and applicable IT general controls.
 
-    6.2.4 Deviation classification thresholds must be established within the Risk Assessment Report. Deviations identified during any subsequent lifecycle phase must be classified as Critical, Major, or Minor based on their potential impact on patient safety, data integrity, or regulatory compliance. All deviations must be documented in a Deviation Report that includes a root cause analysis, impact assessment, and corrective action. Quality Assurance must review and approve all deviation records before the affected activity proceeds.
+      6.1.2.3 Non-Regulated Business AI: AI systems supporting non-regulated business functions. These systems are subject to standard IT governance, information security controls per ISO/IEC 27001:2022, and the organisation's AI ethical use requirements.
 
-    6.2.5 The Risk Classification Record and Risk Assessment Report must be retained in the project file and referenced in the CMDB entry for the AI system. These records are subject to the retention requirements of GLBL-POL-00078 governing Retention, Transfer or Disposal of GxP Regulated Materials.
+      6.1.2.4 High-Risk AI: Any AI system, regardless of regulatory category, that makes or materially influences decisions affecting patient safety, product quality, data integrity, or individual rights. High-risk AI systems require enhanced governance review and documented ethical impact assessment.
 
-    6.2.6 Risk classification must be reviewed and, where necessary, revised whenever a material change to the AI system's scope, data inputs, algorithmic approach, or deployment environment is proposed. Requalification scope must be assessed for every approved change in accordance with GIT-SOP-00001.
+    6.1.3 Project File Establishment
 
-  6.3 Ethical Review and Responsible AI Principles Evaluation
+      A project file must be established for every AI development or procurement project at the point of classification. The project file must contain all applicable formal documentation generated throughout the AI system lifecycle and must be maintained in a readily accessible location for inspection purposes. The level of documentation detail within the project file must reflect the perceived size, impact, risk, complexity, and novelty of the system, consistent with a risk-based approach aligned to GAMP 5 (Second Edition, 2022).
 
-  All AI systems, regardless of risk classification, must undergo an Ethical Review prior to development or deployment. The Ethical Review ensures that AI systems are designed and operated in a manner consistent with the organisation's Responsible AI Principles, applicable human rights obligations, and relevant regulatory guidance including the EU AI Act where applicable.
+  6.2 Risk Assessment and GxP Impact Evaluation
 
-    6.3.1 The AI Governance Lead must convene an Ethical Review Panel comprising representatives from Legal, Privacy, Compliance, the requesting business unit, and, for GxP-classified systems, Quality Assurance. The panel must evaluate the proposed AI system against the following Responsible AI Principles:
+    A formal risk assessment must be completed for every AI use case prior to approval for development or deployment. The risk assessment must evaluate the potential impact of the AI system on product quality, patient safety, data integrity, regulatory compliance, and business continuity. Risk assessments must be documented, reviewed by the AI Governance function, and approved by Quality Assurance (QA) for all GxP-classified systems.
 
-      6.3.1.1 Transparency: the AI system's decision-making logic must be explainable to the degree required by its risk classification and intended use.
+    6.2.1 Risk Assessment Methodology
 
-      6.3.1.2 Fairness: the AI system must not produce outputs that systematically disadvantage individuals or groups on the basis of protected characteristics.
+      The risk assessment must apply a risk-based approach consistent with GAMP 5 (Second Edition, 2022) and must address the following dimensions:
 
-      6.3.1.3 Accountability: a named System Owner must be designated for every AI system, with clearly documented responsibilities for ongoing monitoring and performance review.
+      6.2.1.1 Intended use and criticality: the degree to which the AI system's outputs influence regulated decisions, automated actions, or electronic records subject to 21 CFR Part 11 or EU GMP Annex 11.
 
-      6.3.1.4 Privacy and Data Minimisation: the AI system must process only the minimum personal data necessary for its intended purpose, in compliance with applicable data protection legislation and the organisation's Privacy Policy.
+      6.2.1.2 Data integrity risk: the potential for AI-generated or AI-processed electronic records to be incomplete, inaccurate, or non-attributable, assessed against the requirements of Data Integrity Policy GLBL-POL-00007.
 
-      6.3.1.5 Human Oversight: AI systems that produce outputs used in regulated decisions must incorporate a defined human review step before those outputs are acted upon.
+      6.2.1.3 Model risk: the risk of model bias, model drift, hallucination, or erroneous output, and the consequences of such failures on regulated processes or patient outcomes.
 
-      6.3.1.6 Safety and Reliability: the AI system must be designed to fail safely, with defined fallback procedures and escalation contacts documented in the system's operational runbook.
+      6.2.1.4 Vendor and supply chain risk: the risk associated with vendor-supplied AI technology, including third-party model dependencies, black-box algorithms, and lack of explainability.
 
-    6.3.2 The Ethical Review Panel must produce a signed Ethical Review Record documenting the evaluation findings, any conditions imposed on development or deployment, and the panel's approval or rejection decision. This record must be retained in the project file.
+      6.2.1.5 Cybersecurity risk: the risk of adversarial attack, data poisoning, or unauthorised access to AI systems or training data, assessed in accordance with ISO/IEC 27001:2022.
 
-    6.3.3 Where the Ethical Review Panel identifies concerns that cannot be resolved through design controls or operational safeguards, the AI use case must be escalated to the Chief Compliance Officer and, where patient safety is implicated, to the Head of Quality Assurance for a final determination on whether to proceed.
+      6.2.1.6 Operational and business continuity risk: the impact of AI system unavailability, degraded performance, or incorrect outputs on regulated operations.
 
-    6.3.4 Ethical Review outcomes must be revisited whenever the AI system's intended use, target population, or data processing scope changes materially. The AI Governance Lead must initiate a supplementary Ethical Review in such circumstances, and the outcome must be documented as an addendum to the original Ethical Review Record.
+    6.2.2 GxP Impact Evaluation
 
-  6.4 Data Governance and Quality Requirements for AI Systems
+      For all AI use cases classified as GxP-Regulated, a formal GxP Impact Evaluation must be completed as part of the risk assessment. The GxP Impact Evaluation must determine:
 
-  All data used in the training, validation, testing, and ongoing operation of AI systems must meet the data governance and quality standards defined in this section. Compliance with Data Integrity Policy GLBL-POL-00007 is mandatory for all electronic records, including AI-generated outputs, in accordance with 21 CFR Part 11 and EU GMP Annex 11.
+      6.2.2.1 Whether the AI system constitutes a computerised system subject to EU GMP Annex 11 and must therefore be qualified and validated in accordance with applicable SOPs.
 
-    6.4.1 The System Owner must ensure that a Data Governance Plan is produced for every AI system prior to the commencement of model development. The plan must document data sources, data lineage, data quality acceptance criteria, data access controls, and the process for managing data changes throughout the AI system lifecycle.
+      6.2.2.2 The GAMP 5 software category applicable to the AI system (e.g., Category 3 — non-configured software, Category 4 — configured software, Category 5 — custom software), which determines the required validation documentation and testing depth.
 
-    6.4.2 All training, validation, and test datasets must be subject to documented data quality checks that verify completeness, accuracy, consistency, and representativeness. Data quality check results must be recorded and retained in the project file.
+      6.2.2.3 Whether the AI system creates, modifies, maintains, archives, retrieves, or transmits electronic records or electronic signatures subject to 21 CFR Part 11.
 
-    6.4.3 Data used in GxP-classified AI systems must satisfy the ALCOA+ principles (Attributable, Legible, Contemporaneous, Original, Accurate, plus Complete, Consistent, Enduring, and Available) as required by GLBL-POL-00007.
+      6.2.2.4 The applicable data retention, transfer, and disposal requirements under Retention, Transfer or Disposal of GxP Regulated Materials Policy GLBL-POL-00078 for all data outputs generated by the AI system.
 
-      6.4.3.1 Electronic audit trails must be enabled for all data transformations applied to GxP training or operational datasets. Audit trail records must be protected from unauthorised modification and must be retained for the period specified in GLBL-POL-00078.
+    6.2.3 Risk Classification and Escalation
 
-    6.4.4 Access to AI training data, model artefacts, and AI-generated outputs must be controlled through role-based access management. Annual account access reviews must be conducted for all qualified AI systems in accordance with the organisation's access management policy.
+      Upon completion of the risk assessment, the AI system must be assigned an overall risk classification of Critical, High, Medium, or Low. The risk classification must be documented in the project file and must drive the scope and rigour of subsequent validation, governance, and monitoring activities. Critical and High risk classifications must be escalated to the AI Governance Board and QA for review prior to proceeding. Any deviation from the risk assessment process must be documented as a deviation, classified, and reviewed by QA in accordance with section 6.8.
 
-    6.4.5 Data used in AI systems must not be transferred, retained beyond its authorised retention period, or disposed of without compliance with GLBL-POL-00078 (Retention, Transfer or Disposal of GxP Regulated Materials) and GLBL-POL-00050 (Secure Destruction of Confidential Documents).
+  6.3 AI Model Governance and Approval Workflow
 
-    6.4.6 Where AI systems ingest real-time or near-real-time operational data, a data monitoring procedure must be established to detect data drift, schema changes, or quality degradation. Detected anomalies must be logged, assessed for impact on model performance and data integrity, and escalated to the System Owner and Quality Assurance as appropriate.
+    All AI models and AI-enabled systems must pass through a formal governance and approval workflow before being deployed into any production environment. Vendor-supplied AI technology must be approved prior to use in accordance with the Global Vendor Program. No AI system may be deployed into a regulated or production environment without documented approval from the AI Governance function and, where applicable, QA.
 
-  6.5 AI Model Development Standards and Controls
+    6.3.1 Governance Review
 
-  AI model development must follow a structured Software Development Lifecycle (SDLC) that incorporates the controls required by GAMP 5 (Second Edition, 2022) for GxP-classified systems and applicable best practices for all other AI systems. A formal Development Plan must be produced for every GxP AI system as a mandatory SDLC document.
+      The AI Governance function must conduct a structured governance review of each AI system, encompassing the following activities:
 
-    6.5.1 The Development Plan must define the development methodology, technology stack, model architecture selection rationale, version control strategy, peer review requirements, testing approach, and acceptance criteria. The plan must be approved by dated signature from the System Owner and Quality Assurance representative before development commences.
+      6.3.1.1 Review of the completed AI Use Case Intake Form, risk assessment, and GxP Impact Evaluation.
 
-    6.5.2 All model development artefacts, including source code, configuration files, training scripts, hyperparameter settings, and model weights, must be stored in a version-controlled repository. Commit history must be preserved and must not be altered or deleted.
+      6.3.1.2 Verification that the proposed AI system and any vendor-supplied AI technology have been assessed and approved through the Global Vendor Program prior to procurement or integration.
 
-    6.5.3 Peer review must be documented for all GxP AI systems during the design and build phases. Peer review records must capture the reviewer's identity, the artefacts reviewed, the review date, findings raised, and the disposition of each finding. Peer review records must be retained in the project file.
+      6.3.1.3 Assessment of the AI system's alignment with the organisation's ethical AI principles, including fairness, transparency, explainability, and accountability.
 
-    6.5.4 Model hyperparameters, architecture decisions, and training configurations must be documented in a Baseline Configuration Document. This document must be approved by dated signature before model training commences in the validation or production environment.
+      6.3.1.4 Confirmation that access control requirements have been defined and will be implemented in accordance with applicable SOPs, including GLBL-SOP-00080, consistent with ISO/IEC 27001:2022 and ITIL 4 service management principles.
 
-    6.5.5 All changes to model code, configuration, or training data after the Baseline Configuration Document has been approved must be processed through the formal change control process defined in GIT-SOP-00001. Unauthorised modifications to baseline artefacts are prohibited.
+      6.3.1.5 Review of the proposed CMDB entry to be created for the AI system upon acceptance into production, consistent with infrastructure qualification practices.
 
-    6.5.6 Technical work instructions must be developed for commonly repeated AI system administration tasks, including model monitoring, capacity management, retraining procedures, and lifecycle management activities. These work instructions must be version-controlled and subject to the same document approval requirements as this SOP.
+    6.3.2 Peer Review of AI Model Code and Design
 
-    6.5.7 Physical and cybersecurity controls must be applied throughout the development environment. Developers must observe electrostatic discharge (ESD) precautions when working with hardware components, adhere to hot and cold aisle access protocols in data centre environments, and follow electrical hazard awareness procedures. Cybersecurity incident response procedures must be documented and must include detection, containment, and escalation steps with named emergency contacts. Emergency shutdown procedures and escalation contacts must be maintained in the system's operational runbook and reviewed annually.
+      For all AI systems classified as GxP-Regulated or High-Risk, a peer review of the AI model code and design specifications must be performed prior to validation testing. The peer review must be conducted by a qualified individual independent of the primary developer. The peer review must assess correctness of logic, adherence to design specifications, compliance with coding standards, and alignment with GAMP 5 (Second Edition, 2022) requirements. The outcome of the peer review, including any findings and their resolution, must be documented and retained in the project file.
 
-  6.6 GxP Validation and Qualification of AI Systems
+    6.3.3 Approval Workflow
 
-  All AI systems classified as GxP must undergo formal Computer System Validation (CSV) in accordance with GAMP 5 (Second Edition, 2022), 21 CFR Part 11, and EU GMP Annex 11 before being placed into operational use in a regulated environment. The validation lifecycle must be documented, executed, and approved in accordance with the requirements of this section.
+      The formal approval workflow for AI system deployment must proceed as follows:
 
-    6.6.1 A Validation Master Plan or system-level Validation Plan must be produced for each GxP AI system. The plan must define the validation strategy, scope, roles and responsibilities, deliverables, acceptance criteria, and the approach to managing deviations identified during testing.
+      6.3.3.1 The AI system owner must submit the completed governance review package — including the risk assessment, GxP Impact Evaluation, peer review record, and validation summary — to the AI Governance function for approval.
 
-    6.6.2 The following qualification documents must be produced, approved by dated signature, and placed under document control before testing commences: Installation Qualification Protocol (IQP), As-Built Document, Test Scripts, Baseline Configuration Document, and Installation Qualification Report (IQR). No testing activity may commence until all required qualification documents carry the required approvals.
+      6.3.3.2 The AI Governance function must review the package and issue a governance approval decision within the timeframe defined in the project plan.
 
-    6.6.3 Operational Qualification (OQ) and Performance Qualification (PQ) activities must be executed in accordance with approved test scripts. Test execution must be performed by trained personnel, and all test results, including pass, fail, and deviation records, must be documented contemporaneously in accordance with GLBL-POL-00007.
+      6.3.3.3 For GxP-Regulated AI systems, QA must independently review and approve the validation summary and any associated qualification records before production deployment is authorised.
 
-    6.6.4 Deviations identified during qualification testing must be classified as Critical, Major, or Minor. Critical and Major deviations must be resolved and their resolution verified before the qualification phase is closed. All deviations must be documented in a Deviation Report containing a root cause analysis, impact assessment, and corrective action plan. Quality Assurance must review and approve all Deviation Reports.
+      6.3.3.4 Approval decisions must be recorded with electronic signatures in accordance with 21 CFR Part 11 where the AI system supports regulated operations.
 
-    6.6.5 Upon successful completion of all qualification phases, a Validation Summary Report must be produced and approved by dated signature from the System Owner and Quality Assurance representative. The report must confirm that the AI system meets its predefined acceptance criteria and is suitable for its intended use in the regulated environment.
+      6.3.3.5 Upon approval, the AI system must be registered in the CMDB and the project file must be updated to reflect the approved production status.
 
-    6.6.6 A CMDB entry must be created for every AI system accepted into the qualified environment. The CMDB entry must reference the Validation Summary Report, Baseline Configuration Document, and all associated qualification records.
+    6.3.4 Change Control for AI Systems
 
-    6.6.7 Requalification must be triggered whenever a change is made to the qualified AI system's infrastructure, model, configuration, or operational environment. The requalification scope must be assessed and documented as part of the change control process in accordance with GIT-SOP-00001. Annual account access reviews must be conducted for all qualified AI systems.
+      All changes to AI system configurations, model parameters, training data pipelines, or integrated infrastructure must be processed through the formal Change Management Process (RFC process) per Change Management Process SOP GIT-SOP-00001 before deployment. The change control record must include an assessment of the impact on the validated state of the system and must determine whether requalification or revalidation is required. No change may be deployed to a qualified AI system without documented change control approval. Changes affecting GxP-regulated functionality must be reviewed and approved by QA prior to implementation.
 
-  6.7 Bias Detection, Fairness Testing, and Explainability Review
+  6.4 Data Privacy, Security, and Ethical Compliance Requirements
 
-  All AI systems must undergo bias detection, fairness testing, and explainability review as part of the pre-deployment qualification process and at defined intervals throughout the operational lifecycle. For GxP-classified systems, these activities must be documented and approved in accordance with the CSV requirements of GAMP 5 (Second Edition, 2022) and 21 CFR Part 11.
+    All AI systems must comply with the organisation's data privacy obligations, information security requirements, and ethical AI standards throughout their lifecycle. These requirements apply to AI systems in all classification categories and must be addressed during design, development, validation, and ongoing operation.
 
-    6.7.1 The AI Developer must execute a documented Bias Detection Assessment against the model's training and validation datasets prior to deployment. The assessment must evaluate the distribution of outcomes across relevant demographic and operational subgroups and must record any statistically significant disparities identified.
+    6.4.1 Data Privacy Requirements
 
-    6.7.2 Fairness testing must be conducted using pre-defined fairness metrics that are appropriate to the AI system's intended use and risk classification. Acceptance thresholds for fairness metrics must be documented in the Validation Plan and approved by Quality Assurance before testing commences.
+      The AI system owner and development team must ensure the following data privacy controls are implemented prior to deployment:
 
-    6.7.3 Where fairness testing identifies bias that exceeds the defined acceptance thresholds, the finding must be classified as a deviation in accordance with section 6.2.4, and a Deviation Report must be raised. Development must not proceed to the next lifecycle phase until the deviation has been resolved and approved by Quality Assurance.
+      6.4.1.1 Personal data, patient data, and sensitive data used in AI model training, testing, or inference must be identified, classified, and handled in accordance with applicable data privacy regulations and organisational data governance policies.
 
-    6.7.4 An Explainability Review must be conducted for every AI system prior to deployment. The review must assess whether the AI system's outputs can be explained to the degree required by its risk classification, intended use, and applicable regulatory requirements. For AI systems that produce outputs used in GxP-regulated decisions, the explainability approach must be documented in the Validation Summary Report.
+      6.4.1.2 Data minimisation principles must be applied: only the minimum data necessary for the intended AI function may be collected, processed, or retained.
 
-    6.7.5 For AI systems classified as Critical or High risk, the Explainability Review must include a demonstration that subject matter experts and end users can interpret model outputs sufficiently to exercise meaningful human oversight, consistent with the Human Oversight principle defined in section 6.3.1.5.
+      6.4.1.3 AI-generated confidential outputs must be subject to secure handling and, upon disposal, must be destroyed in accordance with Secure Destruction of Confidential Documents Policy GLBL-POL-00050.
 
-    6.7.6 Bias detection and fairness testing must be repeated following any model retraining, significant data change, or change to the AI system's operational scope. Results must be documented and retained in the project file. Requalification scope must be assessed for every such change in accordance with GIT-SOP-00001.
+      6.4.1.4 Data outputs from AI systems used in regulated contexts must be retained, transferred, or disposed of in accordance with Retention, Transfer or Disposal of GxP Regulated Materials Policy GLBL-POL-00078.
 
-    6.7.7 All Bias Detection Assessment records, Fairness Testing records, and Explainability Review records must be retained in accordance with GLBL-POL-00078 and must be available for inspection by Quality Assurance and regulatory authorities upon request.
+      6.4.1.5 All electronic records created, modified, or transmitted by AI systems in regulated environments must comply with data integrity requirements per Data Integrity Policy GLBL-POL-00007 and 21 CFR Part 11.
 
-6.0 PROCEDURE
+    6.4.2 Information Security Requirements
 
-This section defines the mandatory procedural requirements governing the responsible identification, assessment, development, validation, and deployment of Artificial Intelligence systems within the Global Technology organisation. All personnel executing activities described herein must have completed role-specific training prior to performing any qualification or AI lifecycle activity, and training records must be maintained in accordance with applicable GxP requirements. All AI systems that support or interact with GxP-regulated processes must comply with Computer System Validation (CSV) requirements, Data Integrity Policy GLBL-POL-00007, and applicable change management controls as defined in GIT-SOP-00001. This SOP is subject to controlled document management; approval signatures, whether wet or electronic, must comply with 21 CFR Part 11. Every page of this document must carry a header displaying the document title, document ID, revision number, effective date, and page x of y notation, together with a CURRENT, Confidential and Proprietary footer.
+      AI systems must be designed, deployed, and operated in accordance with the organisation's information security framework, consistent with ISO/IEC 27001:2022. The following security controls must be implemented and verified:
 
-  6.1 AI Use Case Identification and Intake
+      6.4.2.1 Access control to AI systems must be properly managed, controlled, and monitored in accordance with GLBL-SOP-00080. Role-based access must be defined, approved, and reviewed at defined intervals.
 
-  All proposed AI use cases must be formally identified, documented, and submitted through the AI Intake process before any development, procurement, or deployment activity commences. This process ensures that AI initiatives are aligned with organisational strategy, regulatory obligations, and responsible AI principles prior to resource commitment.
+      6.4.2.2 AI system environments must be protected against unauthorised access, data exfiltration, adversarial input, and model tampering through technical and administrative controls.
 
-    6.1.1 The requesting business unit or technology team must complete an AI Use Case Intake Form, capturing the intended purpose, target user population, data inputs and outputs, system dependencies, and anticipated business benefit of the proposed AI system.
+      6.4.2.3 Cybersecurity incident response procedures must be defined for each AI system, including detection, containment, and escalation steps. Incidents must be reported to the Information Security function and, where applicable, to QA and regulatory authorities in accordance with applicable breach notification requirements.
 
-    6.1.2 The intake submission must identify whether the proposed AI system will interact with, support, or produce outputs consumed by GxP-regulated processes, SOX-applicable applications such as SAP, or other controlled environments. This determination governs the applicable validation and compliance pathway.
+      6.4.2.4 Physical data centre safety controls — including ESD precautions, hot/cold aisle access management, rack safety, and electrical hazard awareness — must be observed for all on-premises AI infrastructure components.
 
-    6.1.3 The AI Governance Lead or designated intake reviewer must assess each submission within ten business days of receipt and assign a preliminary classification of GxP, non-GxP regulated, or non-regulated to guide subsequent risk and ethical review activities.
+      6.4.2.5 Emergency shutdown procedures and escalation contacts must be documented and accessible to operations personnel responsible for AI system infrastructure.
 
-    6.1.4 A project file must be established for every approved AI development or procurement initiative. This file must contain all applicable formal documentation and must be maintained in a location readily available for inspection by Quality Assurance and regulatory authorities.
+    6.4.3 Ethical Compliance Requirements
 
-    6.1.5 Any AI system sourced from an external vendor must not proceed beyond the intake stage until vendor approval has been obtained in accordance with the Global Vendor Program. Vendor qualification records must be retained within the project file.
+      All AI systems must be assessed for ethical compliance as part of the governance review process. The ethical compliance assessment must address the following:
 
-    6.1.6 Approved intake records must be stored in the controlled document management system and referenced in the Configuration Management Database (CMDB) entry established for the AI system upon acceptance into the qualified environment.
+      6.4.3.1 Fairness and bias: the AI model must be evaluated for potential bias in training data, model outputs, and decision logic. Identified biases must be documented, assessed for impact, and mitigated prior to deployment.
 
-  6.2 AI Risk Classification and Impact Assessment
+      6.4.3.2 Transparency and explainability: the AI system must be capable of providing sufficient explanation of its outputs to support human oversight, audit, and regulatory inspection, particularly for GxP-regulated and High-Risk AI systems.
 
-  Every AI system that has passed the intake stage must undergo a formal risk classification and impact assessment before design or procurement activities proceed. The risk classification must follow a risk-based approach consistent with GAMP 5 (Second Edition, 2022) principles, whereby the level of documentation, testing rigour, and oversight is proportionate to the perceived size, impact, risk, complexity, and novelty of the system.
+      6.4.3.3 Human oversight: AI systems must not be deployed in a manner that removes meaningful human oversight from decisions affecting patient safety, product quality, or individual rights without explicit governance approval and documented risk acceptance.
 
-    6.2.1 The responsible AI Developer or System Owner must complete a Risk Classification Record that assigns the AI system to one of the following tiers: Critical (direct patient safety, product quality, or data integrity impact), High (indirect GxP impact or significant SOX financial reporting relevance), Medium (operational impact with limited regulatory exposure), or Low (administrative or analytical tools with no regulated output).
+      6.4.3.4 Accountability: ownership of each AI system's outputs and decisions must be clearly assigned to a named individual or function, documented in the project file, and reflected in the CMDB entry.
 
-    6.2.2 The impact assessment must evaluate the following dimensions at minimum: patient safety and product quality risk, data integrity risk as defined under GLBL-POL-00007, cybersecurity and information security risk consistent with ISO/IEC 27001:2022, operational continuity risk, and regulatory inspection risk.
+  6.5 AI System Validation and Qualification (CSV/CSA)
 
-    6.2.3 For AI systems classified as Critical or High, a formal Risk Assessment Report must be authored, peer-reviewed, and approved by dated signature from the System Owner and Quality Assurance representative before design activities commence.
+    All AI systems classified as GxP-Regulated must be validated and qualified in accordance with applicable Computer Software Validation (CSV) and Computer Software Assurance (CSA) principles, consistent with GAMP 5 (Second Edition, 2022), EU GMP Annex 11, and 21 CFR Part 11. The validation approach must be risk-based: the level of validation effort, documentation, and testing must be proportionate to the risk classification, GAMP 5 software category, and complexity of the AI system as determined in section 6.2.
 
-    6.2.4 Deviation classification thresholds must be established within the Risk Assessment Report. Deviations identified during any subsequent lifecycle phase must be classified as Critical, Major, or Minor based on their potential impact on patient safety, data integrity, or regulatory compliance. All deviations must be documented in a Deviation Report that includes a root cause analysis, impact assessment, and corrective action. Quality Assurance must review and approve all deviation records before the affected activity proceeds.
+    6.5.1 Validation Planning
 
-    6.2.5 The Risk Classification Record and Risk Assessment Report must be retained in the project file and referenced in the CMDB entry for the AI system. These records are subject to the retention requirements of GLBL-POL-00078 governing Retention, Transfer or Disposal of GxP Regulated Materials.
+      Prior to commencing validation activities, a Validation Plan must be authored by the AI system owner and reviewed and approved by QA. The Validation Plan must define:
 
-    6.2.6 Risk classification must be reviewed and, where necessary, revised whenever a material change to the AI system's scope, data inputs, algorithmic approach, or deployment environment is proposed. Requalification scope must be assessed for every approved change in accordance with GIT-SOP-00001.
+      6.5.1.1 The scope of validation, including the AI system components, interfaces, and data flows subject to qualification.
 
-  6.3 Ethical Review and Responsible AI Principles Evaluation
+      6.5.1.2 The GAMP 5 software category and the corresponding validation lifecycle activities and deliverables required.
 
-  All AI systems, regardless of risk classification, must undergo an Ethical Review prior to development or deployment. The Ethical Review ensures that AI systems are designed and operated in a manner consistent with the organisation's Responsible AI Principles, applicable human rights obligations, and relevant regulatory guidance including the EU AI Act where applicable.
+      6.5.1.3 The roles and responsibilities for each validation activity, including QA oversight responsibilities.
 
-    6.3.1 The AI Governance Lead must convene an Ethical Review Panel comprising representatives from Legal, Privacy, Compliance, the requesting business unit, and, for GxP-classified systems, Quality Assurance. The panel must evaluate the proposed AI system against the following Responsible AI Principles:
+      6.5.1.4 The acceptance criteria that must be met for the AI system to be considered validated and approved for production use.
 
-      6.3.1.1 Transparency: the AI system's decision-making logic must be explainable to the degree required by its risk classification and intended use.
+      6.5.1.5 The approach to managing deviations identified during validation testing, including classification, documentation, and QA review requirements.
 
-      6.3.1.2 Fairness: the AI system must not produce outputs that systematically disadvantage individuals or groups on the basis of protected characteristics.
+    6.5.2 Validation Lifecycle Deliverables
 
-      6.3.1.3 Accountability: a named System Owner must be designated for every AI system, with clearly documented responsibilities for ongoing monitoring and performance review.
+      The following validation lifecycle deliverables must be produced, reviewed, and approved as applicable to the AI system's GAMP 5 category and risk classification. All deliverables must be retained in the project file and must be available for regulatory inspection:
 
-      6.3.1.4 Privacy and Data Minimisation: the AI system must process only the minimum personal data necessary for its intended purpose, in compliance with applicable data protection legislation and the organisation's Privacy Policy.
+      6.5.2.1 User Requirements Specification (URS): documents the intended use, functional requirements, and compliance requirements of the AI system from the user and regulatory perspective.
 
-      6.3.1.5 Human Oversight: AI systems that produce outputs used in regulated decisions must incorporate a defined human review step before those outputs are acted upon.
+      6.5.2.2 Functional Specification (FS) and/or Design Specification (DS): documents how the AI system will meet the URS, including model architecture, data flows, integration points, and security controls.
 
-      6.3.1.6 Safety and Reliability: the AI system must be designed to fail safely, with defined fallback procedures and escalation contacts documented in the system's operational runbook.
+      6.5.2.3 Installation Qualification (IQ): verifies that the AI system and its infrastructure components have been installed correctly and in accordance with approved specifications.
 
-    6.3.2 The Ethical Review Panel must produce a signed Ethical Review Record documenting the evaluation findings, any conditions imposed on development or deployment, and the panel's approval or rejection decision. This record must be retained in the project file.
+      6.5.2.4 Operational Qualification (OQ): verifies that the AI system operates in accordance with its functional and design specifications across defined operational conditions, including boundary and negative test cases.
 
-    6.3.3 Where the Ethical Review Panel identifies concerns that cannot be resolved through design controls or operational safeguards, the AI use case must be escalated to the Chief Compliance Officer and, where patient safety is implicated, to the Head of Quality Assurance for a final determination on whether to proceed.
+      6.5.2.5 Performance Qualification (PQ): verifies that the AI system consistently performs in accordance with its intended use under representative operational conditions, using production-representative data where applicable.
 
-    6.3.4 Ethical Review outcomes must be revisited whenever the AI system's intended use, target population, or data processing scope changes materially. The AI Governance Lead must initiate a supplementary Ethical Review in such circumstances, and the outcome must be documented as an addendum to the original Ethical Review Record.
+      6.5.2.6 Validation Summary Report: documents the overall outcome of the validation activities, confirms that acceptance criteria have been met or that any deviations have been resolved and accepted by QA, and provides the basis for the production deployment approval decision.
 
-  6.4 Data Governance and Quality Requirements for AI Systems
+    6.5.3 Electronic Records and Audit Trail Requirements
 
-  All data used in the training, validation, testing, and ongoing operation of AI systems must meet the data governance and quality standards defined in this section. Compliance with Data Integrity Policy GLBL-POL-00007 is mandatory for all electronic records, including AI-generated outputs, in accordance with 21 CFR Part 11 and EU GMP Annex 11.
+      For all GxP-Regulated AI systems, the following electronic records and audit trail controls must be implemented and verified during qualification, in accordance with 21 CFR Part 11 and EU GMP Annex 11:
 
-    6.4.1 The System Owner must ensure that a Data Governance Plan is produced for every AI system prior to the commencement of model development. The plan must document data sources, data lineage, data quality acceptance criteria, data access controls, and the process for managing data changes throughout the AI system lifecycle.
+      6.5.3.1 The AI system must generate and maintain a complete, attributable, legible, contemporaneous, original, and accurate (ALCOA+) audit trail of all system activities, data inputs, model outputs, and configuration changes.
 
-    6.4.2 All training, validation, and test datasets must be subject to documented data quality checks that verify completeness, accuracy, consistency, and representativeness. Data quality check results must be recorded and retained in the project file.
+      6.5.3.2 Audit trail records must be protected from modification or deletion and must be available for review by authorised personnel and regulatory inspectors.
 
-    6.4.3 Data used in GxP-classified AI systems must satisfy the ALCOA+ principles (Attributable, Legible, Contemporaneous, Original, Accurate, plus Complete, Consistent, Enduring, and Available) as required by GLBL-POL-00007.
+      6.5.3.3 Electronic signatures applied within or by the AI system must comply with the identity verification, linking, and non-repudiation requirements of 21 CFR Part 11.
 
-      6.4.3.1 Electronic audit trails must be enabled for all data transformations applied to GxP training or operational datasets. Audit trail records must be protected from unauthorised modification and must be retained for the period specified in GLBL-POL-00078.
+      6.5.3.4 Audit trail review must be performed at defined intervals as part of ongoing system monitoring, and the results must be documented and retained.
 
-    6.4.4 Access to AI training data, model artefacts, and AI-generated outputs must be controlled through role-based access management. Annual account access reviews must be conducted for all qualified AI systems in accordance with the organisation's access management policy.
+    6.5.4 Ongoing Maintenance of Validated State
 
-    6.4.5 Data used in AI systems must not be transferred, retained beyond its authorised retention period, or disposed of without compliance with GLBL-POL-00078 (Retention, Transfer or Disposal of GxP Regulated Materials) and GLBL-POL-00050 (Secure Destruction of Confidential Documents).
+      Once an AI system has been accepted into production, the validated state must be actively maintained throughout the system's operational lifecycle. The following controls must be applied:
 
-    6.4.6 Where AI systems ingest real-time or near-real-time operational data, a data monitoring procedure must be established to detect data drift, schema changes, or quality degradation. Detected anomalies must be logged, assessed for impact on model performance and data integrity, and escalated to the System Owner and Quality Assurance as appropriate.
+      6.5.4.1 All changes to the AI system must be processed through the Change Management Process per GIT-SOP-00001, and the impact on the validated state must be assessed before the change is implemented.
 
-  6.5 AI Model Development Standards and Controls
+      6.5.4.2 Periodic reviews of the AI system's validated state must be conducted at intervals defined in the Validation Plan or applicable SOP, and the results must be documented and approved by QA.
 
-  AI model development must follow a structured Software Development Lifecycle (SDLC) that incorporates the controls required by GAMP 5 (Second Edition, 2022) for GxP-classified systems and applicable best practices for all other AI systems. A formal Development Plan must be produced for every GxP AI system as a mandatory SDLC document.
+      6.5.4.3 Model performance must be monitored on an ongoing basis to detect model drift, degradation, or unexpected behaviour. Identified performance issues must be assessed, documented, and addressed through the deviation or change control process as appropriate.
 
-    6.5.1 The Development Plan must define the development methodology, technology stack, model architecture selection rationale, version control strategy, peer review requirements, testing approach, and acceptance criteria. The plan must be approved by dated signature from the System Owner and Quality Assurance representative before development commences.
+      6.5.4.4 The CMDB entry for the AI system must be maintained and updated to reflect any changes to system configuration, validated state, or operational status, consistent with infrastructure qualification practices.
 
-    6.5.2 All model development artefacts, including source code, configuration files, training scripts, hyperparameter settings, and model weights, must be stored in a version-controlled repository. Commit history must be preserved and must not be altered or deleted.
+  6.6 Bias Detection, Fairness Review, and Explainability Standards
 
-    6.5.3 Peer review must be documented for all GxP AI systems during the design and build phases. Peer review records must capture the reviewer's identity, the artefacts reviewed, the review date, findings raised, and the disposition of each finding. Peer review records must be retained in the project file.
+    All AI systems deployed within Global Technology must be evaluated for algorithmic bias and fairness prior to production release and at defined intervals thereafter. Explainability requirements must be established commensurate with the risk classification of the system, consistent with a risk-based approach aligned to GAMP 5 (Second Edition, 2022).
 
-    6.5.4 Model hyperparameters, architecture decisions, and training configurations must be documented in a Baseline Configuration Document. This document must be approved by dated signature before model training commences in the validation or production environment.
+    6.6.1 Bias Assessment Requirements
 
-    6.5.5 All changes to model code, configuration, or training data after the Baseline Configuration Document has been approved must be processed through the formal change control process defined in GIT-SOP-00001. Unauthorised modifications to baseline artefacts are prohibited.
+      The AI system owner, in collaboration with the Data Science or AI Development team, must conduct a formal bias assessment for every AI system prior to deployment and following any significant model update or retraining event. The bias assessment must:
 
-    6.5.6 Technical work instructions must be developed for commonly repeated AI system administration tasks, including model monitoring, capacity management, retraining procedures, and lifecycle management activities. These work instructions must be version-controlled and subject to the same document approval requirements as this SOP.
+      6.6.1.1 Identify protected attributes and sensitive variables relevant to the system's decision domain (e.g., demographic, geographic, or clinical variables in life sciences contexts).
 
-    6.5.7 Physical and cybersecurity controls must be applied throughout the development environment. Developers must observe electrostatic discharge (ESD) precautions when working with hardware components, adhere to hot and cold aisle access protocols in data centre environments, and follow electrical hazard awareness procedures. Cybersecurity incident response procedures must be documented and must include detection, containment, and escalation steps with named emergency contacts. Emergency shutdown procedures and escalation contacts must be maintained in the system's operational runbook and reviewed annually.
+      6.6.1.2 Apply quantitative fairness metrics appropriate to the model type and use case, including but not limited to disparate impact ratio, equalised odds, and demographic parity where applicable.
 
-  6.6 GxP Validation and Qualification of AI Systems
+      6.6.1.3 Document all bias assessment results, including datasets used, metrics applied, thresholds defined, and outcomes observed, within the AI system's project file, which must be maintained and made readily available for inspection.
 
-  All AI systems classified as GxP must undergo formal Computer System Validation (CSV) in accordance with GAMP 5 (Second Edition, 2022), 21 CFR Part 11, and EU GMP Annex 11 before being placed into operational use in a regulated environment. The validation lifecycle must be documented, executed, and approved in accordance with the requirements of this section.
+      6.6.1.4 Classify any identified bias as critical, major, or minor based on potential impact to regulated operations, patient safety, data integrity, or business decision quality, and initiate a deviation report in accordance with section 6.8 where bias exceeds defined thresholds.
 
-    6.6.1 A Validation Master Plan or system-level Validation Plan must be produced for each GxP AI system. The plan must define the validation strategy, scope, roles and responsibilities, deliverables, acceptance criteria, and the approach to managing deviations identified during testing.
+    6.6.2 Fairness Review Process
 
-    6.6.2 The following qualification documents must be produced, approved by dated signature, and placed under document control before testing commences: Installation Qualification Protocol (IQP), As-Built Document, Test Scripts, Baseline Configuration Document, and Installation Qualification Report (IQR). No testing activity may commence until all required qualification documents carry the required approvals.
+      A formal fairness review must be conducted as part of the AI system qualification lifecycle. The fairness review must:
 
-    6.6.3 Operational Qualification (OQ) and Performance Qualification (PQ) activities must be executed in accordance with approved test scripts. Test execution must be performed by trained personnel, and all test results, including pass, fail, and deviation records, must be documented contemporaneously in accordance with GLBL-POL-00007.
+      6.6.2.1 Be performed by a peer reviewer independent of the primary model developer, consistent with the peer review requirement for GxP-aligned AI systems. The review and its outcomes must be documented.
 
-    6.6.4 Deviations identified during qualification testing must be classified as Critical, Major, or Minor. Critical and Major deviations must be resolved and their resolution verified before the qualification phase is closed. All deviations must be documented in a Deviation Report containing a root cause analysis, impact assessment, and corrective action plan. Quality Assurance must review and approve all Deviation Reports.
+      6.6.2.2 Evaluate training data representativeness, label quality, and potential sources of historical bias embedded in input datasets.
 
-    6.6.5 Upon successful completion of all qualification phases, a Validation Summary Report must be produced and approved by dated signature from the System Owner and Quality Assurance representative. The report must confirm that the AI system meets its predefined acceptance criteria and is suitable for its intended use in the regulated environment.
+      6.6.2.3 Confirm that fairness thresholds defined during the design phase have been met prior to sign-off on the qualification record.
 
-    6.6.6 A CMDB entry must be created for every AI system accepted into the qualified environment. The CMDB entry must reference the Validation Summary Report, Baseline Configuration Document, and all associated qualification records.
+      6.6.2.4 Be repeated following any change to the model, training data, or deployment environment that may affect fairness outcomes, with requalification scope assessed per the Change Management Process GIT-SOP-00001.
 
-    6.6.7 Requalification must be triggered whenever a change is made to the qualified AI system's infrastructure, model, configuration, or operational environment. The requalification scope must be assessed and documented as part of the change control process in accordance with GIT-SOP-00001. Annual account access reviews must be conducted for all qualified AI systems.
+    6.6.3 Explainability Standards
 
-  6.7 Bias Detection, Fairness Testing, and Explainability Review
+      Explainability requirements must be defined and documented for each AI system in proportion to its risk classification, regulatory context, and the nature of decisions it supports. The following standards apply:
 
-  All AI systems must undergo bias detection, fairness testing, and explainability review as part of the pre-deployment qualification process and at defined intervals throughout the operational lifecycle. For GxP-classified systems, these activities must be documented and approved in accordance with the CSV requirements of GAMP 5 (Second Edition, 2022) and 21 CFR Part 11.
+      6.6.3.1 High-risk AI systems supporting GxP-regulated operations or financial controls subject to SOX compliance must implement model explainability mechanisms (e.g., SHAP values, LIME, attention maps, or equivalent) that enable qualified personnel to interpret individual predictions or recommendations.
 
-    6.7.1 The AI Developer must execute a documented Bias Detection Assessment against the model's training and validation datasets prior to deployment. The assessment must evaluate the distribution of outcomes across relevant demographic and operational subgroups and must record any statistically significant disparities identified.
+      6.6.3.2 Explainability outputs must be retained as electronic records in accordance with 21 CFR Part 11 and Data Integrity Policy GLBL-POL-00007, and must be accessible to auditors and regulators upon request.
 
-    6.7.2 Fairness testing must be conducted using pre-defined fairness metrics that are appropriate to the AI system's intended use and risk classification. Acceptance thresholds for fairness metrics must be documented in the Validation Plan and approved by Quality Assurance before testing commences.
+      6.6.3.3 For AI systems where full algorithmic explainability is technically infeasible, a documented justification must be approved by the AI Governance Lead and the Quality Assurance (QA) function, and compensating controls must be implemented and recorded.
 
-    6.7.3 Where fairness testing identifies bias that exceeds the defined acceptance thresholds, the finding must be classified as a deviation in accordance with section 6.2.4, and a Deviation Report must be raised. Development must not proceed to the next lifecycle phase until the deviation has been resolved and approved by Quality Assurance.
+      6.6.3.4 Explainability documentation must be included in the AI system's project file and version-controlled in accordance with the organisation's controlled document management requirements.
 
-    6.7.4 An Explainability Review must be conducted for every AI system prior to deployment. The review must assess whether the AI system's outputs can be explained to the degree required by its risk classification, intended use, and applicable regulatory requirements. For AI systems that produce outputs used in GxP-regulated decisions, the explainability approach must be documented in the Validation Summary Report.
+  6.7 Human Oversight, Accountability, and Decision Authority
 
-    6.7.5 For AI systems classified as Critical or High risk, the Explainability Review must include a demonstration that subject matter experts and end users can interpret model outputs sufficiently to exercise meaningful human oversight, consistent with the Human Oversight principle defined in section 6.3.1.5.
+    Human oversight must be maintained for all AI-assisted and AI-automated decisions within Global Technology operations. The level of oversight required is proportional to the risk classification of the AI system and the regulatory context in which it operates. No AI system may operate as the sole decision-making authority for actions that affect patient safety, data integrity, regulated records, or material financial controls.
 
-    6.7.6 Bias detection and fairness testing must be repeated following any model retraining, significant data change, or change to the AI system's operational scope. Results must be documented and retained in the project file. Requalification scope must be assessed for every such change in accordance with GIT-SOP-00001.
+    6.7.1 Oversight Framework
 
-    6.7.7 All Bias Detection Assessment records, Fairness Testing records, and Explainability Review records must be retained in accordance with GLBL-POL-00078 and must be available for inspection by Quality Assurance and regulatory authorities upon request.
+      Each AI system must have a designated AI System Owner who is accountable for the system's performance, compliance, and appropriate use. The following oversight requirements apply to all AI systems:
 
-  6.8 Cybersecurity and Cloud Infrastructure Controls for AI
+      6.7.1.1 A human-in-the-loop or human-on-the-loop control model must be defined and documented for each AI system during the design phase, specifying the conditions under which human review, intervention, or override is required.
 
-  All AI systems hosted on cloud or on-premises infrastructure must be secured in accordance with ISO/IEC 27001:2022 and organisational data integrity policy GLBL-POL-00007. Access to AI infrastructure must be restricted to authorised personnel only, with role-based access controls enforced and reviewed annually per the qualified system account access review requirement. Personnel working within physical data centre environments must observe ESD precautions, adhere to hot/cold aisle access protocols, follow rack safety procedures, and maintain electrical hazard awareness at all times. Cybersecurity incident response must follow a defined sequence of detection, containment, and escalation. Upon detection of a security event, the responsible engineer must isolate the affected system, notify the Information Security team, and escalate to the AI System Owner and QA within two hours. Emergency shutdown procedures and escalation contact lists must be maintained within the project file and reviewed annually.
+      6.7.1.2 For AI systems operating in GxP-regulated environments, all consequential outputs — including recommendations, classifications, and automated actions — must be subject to human review and approval before being acted upon, in accordance with EU GMP Annex 11 requirements for computerised systems.
 
-  6.9 Change Control and Configuration Management for AI Models
+      6.7.1.3 Override and intervention capabilities must be technically implemented and tested as part of the qualification process. Personnel authorised to override AI decisions must be identified, trained, and documented.
 
-  All changes to qualified AI systems, including model updates, hyperparameter modifications, infrastructure changes, and integration amendments, must be submitted through the formal change management process defined in GIT-SOP-00001 before implementation. A requalification scope assessment must be completed for every approved change to determine whether full or partial requalification is required. A Configuration Management Database (CMDB) entry must be maintained for all qualified AI systems and infrastructure components from the point of acceptance. Baseline configuration documents must be version-controlled, approved by dated signature, and stored within the project file. No change may be deployed to a qualified AI system without documented QA review and approval.
+      6.7.1.4 All human review decisions, overrides, and approvals of AI outputs must be recorded as audit-trail entries in accordance with 21 CFR Part 11 and Data Integrity Policy GLBL-POL-00007.
 
-  6.10 AI System Monitoring, Performance Tracking, and Drift Detection
+    6.7.2 Accountability Assignment
 
-  Qualified AI systems must be subject to continuous monitoring of performance metrics, including accuracy, precision, recall, and latency, against approved baseline thresholds. Technical work instructions must be developed and maintained for routine monitoring, capacity management, and lifecycle management tasks. Model drift must be assessed at defined intervals or upon trigger events such as data distribution changes or significant performance degradation. Monitoring results must be recorded as electronic records in compliance with GLBL-POL-00007 and retained in accordance with GLBL-POL-00078. Where drift exceeds defined thresholds, the AI System Owner must initiate a formal deviation or requalification process as appropriate.
+      Accountability for AI system decisions and outcomes must be clearly assigned and documented. The following requirements apply:
 
-  6.11 Incident Management and Deviation Handling for AI Systems
+      6.7.2.1 The AI System Owner is accountable for ensuring that the system operates within its validated scope and that outputs are used appropriately by end users.
 
-  All incidents and deviations involving qualified AI systems must be classified as critical, major, or minor based on patient safety impact, data integrity risk, and regulatory exposure. A formal deviation report must be raised for every classified deviation, documenting the event description, root cause analysis, and immediate containment actions. An impact assessment must be completed and approved before the affected system is returned to operational use. QA must review and approve all deviation reports prior to closure. Critical deviations must be escalated to the AI Governance Committee and relevant regulatory affairs stakeholders within 24 hours of identification, consistent with EU GMP Annex 11 requirements.
+      6.7.2.2 Business process owners are accountable for decisions made using AI-generated outputs within their operational domain and must not delegate this accountability to the AI system itself.
 
-  6.12 Audit Trail, Documentation, and Record Retention
+      6.7.2.3 Where AI systems support vendor-supplied technology, vendor accountability must be defined in the vendor agreement and the vendor must be approved in accordance with the Global Vendor Program prior to deployment.
 
-  All AI systems processing GxP-relevant data must maintain a complete, attributable, legible, contemporaneous, original, and accurate (ALCOA+) audit trail in accordance with 21 CFR Part 11 and GLBL-POL-00007. Audit trail records must capture user identity, timestamp, action performed, and system state. All qualification documents, including the IQP, As Built Document, Test Scripts, Baseline Configuration Documents, and IQR, must be approved by dated signature before testing commences and retained within the project file. Retention, transfer, and disposal of GxP-regulated records must comply with GLBL-POL-00078. Secure destruction of confidential documents must comply with GLBL-POL-00050.
+      6.7.2.4 Accountability assignments must be reviewed annually and updated following any change in system ownership, organisational structure, or system scope.
 
-  6.13 Training and Competency Requirements for AI Practitioners
+    6.7.3 Decision Authority Boundaries
 
-  All personnel involved in the development, validation, operation, or oversight of qualified AI systems must complete role-specific training before executing any qualification or operational activity. Training must cover applicable GxP requirements, this SOP, relevant technical work instructions, and system-specific procedures. Training records must be maintained per GxP requirements and made available for inspection upon request. The AI System Owner is responsible for ensuring that training curricula remain current and reflect any changes to system configuration or regulatory guidance.
+      Decision authority boundaries must be established and enforced for every AI system. These boundaries define the categories of decisions the AI system may make autonomously, those requiring human confirmation, and those prohibited from AI involvement entirely.
 
-  6.14 Decommissioning and Retirement of AI Systems
+      6.7.3.1 Decision authority boundaries must be documented in the AI system's design specification and validated as part of the qualification process.
 
-  The retirement of a qualified AI system must be initiated through the formal change management process per GIT-SOP-00001. A decommissioning plan must be prepared, reviewed by QA, and approved before any system shutdown activity commences. All GxP-relevant records and audit trails must be archived in a retrievable format for the retention period specified under GLBL-POL-00078 prior to system removal. Data destruction must comply with GLBL-POL-00050. The CMDB entry for the decommissioned system must be updated to reflect retired status upon completion. A final decommissioning report must be signed, dated, and retained within the project file.
+      6.7.3.2 Any proposed expansion of an AI system's decision authority must be treated as a significant change and processed through the Change Management Process GIT-SOP-00001, including a requalification scope assessment.
+
+      6.7.3.3 Access control mechanisms must enforce decision authority boundaries at the system level, managed and monitored in accordance with GLBL-SOP-00080 and consistent with ISO/IEC 27001:2022 access control requirements.
+
+  6.8 Incident Reporting and AI-Related Deviation Management
+
+    All incidents, anomalies, and deviations involving AI systems must be identified, reported, classified, investigated, and resolved through a structured deviation management process. This process must align with GxP requirements, GAMP 5 (Second Edition, 2022) guidance on computerised system incidents, and the organisation's quality management framework.
+
+    6.8.1 Incident Identification and Initial Reporting
+
+      Any personnel who identifies an AI system incident, unexpected output, performance anomaly, bias event, security breach, or data integrity concern must report it immediately through the designated incident reporting channel. The following requirements apply:
+
+      6.8.1.1 Incidents must be logged in the organisation's incident management system within one business day of identification, capturing the date, time, system affected, description of the event, and the identity of the reporting individual.
+
+      6.8.1.2 Cybersecurity incidents involving AI systems must be escalated immediately to the Information Security team in accordance with the organisation's cybersecurity incident response procedure and ISO/IEC 27001:2022 requirements. Containment actions must be initiated without delay.
+
+      6.8.1.3 Incidents affecting GxP-regulated operations, patient safety, or data integrity must be escalated to the QA function and the AI Governance Lead within four business hours of identification.
+
+    6.8.2 Deviation Classification
+
+      All AI-related deviations must be classified by the QA function in collaboration with the AI System Owner according to the following criteria:
+
+      6.8.2.1 Critical deviation: An event that has caused or has the potential to cause direct harm to patient safety, a significant breach of data integrity as defined in GLBL-POL-00007, a material misstatement in SOX-applicable financial records, or a regulatory compliance failure. Critical deviations require immediate escalation and suspension of the affected AI system pending investigation.
+
+      6.8.2.2 Major deviation: An event that represents a significant departure from the validated state, approved design, or intended use of the AI system, or that has caused a material error in a regulated process output, but does not meet the threshold for critical classification. Major deviations require prompt investigation and must not be closed without QA approval.
+
+      6.8.2.3 Minor deviation: An event that represents a low-risk departure from expected behaviour with no direct impact on regulated outputs, patient safety, or data integrity. Minor deviations must be documented and trended to identify systemic issues.
+
+    6.8.3 Investigation, Root Cause Analysis, and Corrective Action
+
+      A formal investigation must be conducted for all critical and major deviations, and for minor deviations where trending indicates a systemic pattern. The investigation must:
+
+      6.8.3.1 Include a documented root cause analysis using a structured methodology (e.g., fishbone diagram, five-whys, or fault tree analysis) appropriate to the complexity of the deviation.
+
+      6.8.3.2 Assess the impact of the deviation on all affected regulated records, processes, and downstream systems before the AI system is returned to operation.
+
+      6.8.3.3 Result in a documented Corrective and Preventive Action (CAPA) plan where root cause has been identified. The CAPA plan must be reviewed and approved by QA prior to implementation.
+
+      6.8.3.4 Be completed within the timeframes defined by the organisation's deviation management SOP, with QA review and formal closure sign-off required for all critical and major deviations.
+
+      6.8.3.5 All deviation records, investigation reports, and CAPA documentation must be retained as controlled electronic records in accordance with 21 CFR Part 11 and Data Integrity Policy GLBL-POL-00007.
+
+    6.8.4 Emergency Shutdown and Escalation
+
+      Where an AI system poses an immediate risk to patient safety, data integrity, or critical infrastructure, the AI System Owner or any authorised personnel must initiate an emergency shutdown of the affected system. The following steps must be followed:
+
+      6.8.4.1 Notify the AI Governance Lead, QA, and Information Security immediately upon initiating an emergency shutdown, providing a brief description of the triggering event.
+
+      6.8.4.2 Preserve all system logs, audit trails, and output records in their current state to support subsequent investigation. No logs or records may be altered or deleted.
+
+      6.8.4.3 Document the shutdown event as a critical deviation per section 6.8.2 and initiate the investigation process per section 6.8.3 without delay.
+
+      6.8.4.4 The AI system must not be returned to operation until a formal impact assessment has been completed, root cause has been identified or a documented interim justification approved by QA is in place, and all required corrective actions have been implemented and verified.
+
+  6.9 Continuous Monitoring, Auditing, and Performance Review
+
+    All AI systems in production must be subject to continuous monitoring, periodic auditing, and formal performance review to ensure sustained compliance, validated performance, and alignment with intended use. Monitoring activities must be consistent with EU GMP Annex 11 requirements for periodic evaluation of computerised systems and with ISO/IEC 27001:2022 operational monitoring controls.
+
+    6.9.1 Continuous Monitoring Requirements
+
+      Continuous monitoring must be implemented for all AI systems from the point of production deployment. Monitoring must cover the following dimensions:
+
+      6.9.1.1 Model performance metrics: accuracy, precision, recall, F1 score, or domain-specific performance indicators as defined in the system's qualification documentation. Alerts must be configured to trigger when metrics fall below defined thresholds.
+
+      6.9.1.2 Data drift and concept drift: statistical monitoring of input data distributions and output prediction distributions to detect deviations from the training baseline. Drift detection results must be logged and reviewed at defined intervals.
+
+      6.9.1.3 System availability, response time, and error rates: infrastructure-level monitoring consistent with ITIL 4 service management practices, with incidents raised and managed per section 6.8.
+
+      6.9.1.4 Access and usage monitoring: all access to AI systems and their outputs must be logged and monitored in accordance with GLBL-SOP-00080 and ISO/IEC 27001:2022 access control and logging requirements.
+
+      6.9.1.5 All monitoring configurations, alert thresholds, and monitoring records must be maintained in the AI system's Configuration Management Database (CMDB) entry and in
 
 7.0 REFERENCES
 
-The following references govern the requirements, standards, and internal policies applicable to this Standard Operating Procedure for Responsible AI Use in Global Technology. All personnel responsible for implementing, operating, or overseeing AI systems in life sciences and regulated IT environments must consult and comply with the documents listed below.
+The following regulatory standards, internal policies, and procedural documents govern the requirements established in this Standard Operating Procedure. All personnel responsible for the development, deployment, validation, and oversight of AI systems in regulated and non-regulated environments must be familiar with and adhere to the applicable references listed below. Where internal policy documents are referenced, the most current approved version in the document management system shall apply.
 
-  7.1 Regulatory and Industry Guidance
+Regulatory Standards and Industry Guidelines:
 
-    7.1.1 21 CFR Part 11 — Electronic Records; Electronic Signatures (U.S. Food and Drug Administration): governs the use of electronic records and electronic signatures for GxP-regulated systems, including AI-generated outputs and audit trail requirements.
+21 CFR Part 11 — Electronic Records; Electronic Signatures (U.S. Food and Drug Administration). Governs the use of electronic records and electronic signatures for all AI-generated outputs and audit trail data in GxP-regulated environments.
 
-    7.1.2 21 CFR Part 820 — Quality System Regulation (U.S. Food and Drug Administration): establishes quality system requirements applicable to software and AI tools used in the design, manufacture, and distribution of medical devices.
+EU GMP Annex 11 — Computerised Systems (European Medicines Agency). Establishes requirements for the validation, operation, and control of computerised systems, including AI tools used in GxP operations.
 
-    7.1.3 EU GMP Annex 11 — Computerised Systems (European Medicines Agency): defines requirements for the validation, operation, and control of computerised systems, including AI-driven systems, used in GxP-regulated environments.
+GAMP 5: A Risk-Based Approach to Compliant GxP Computerised Systems (Second Edition, 2022) (ISPE). Provides the risk-based framework for software categorisation, validation planning, and lifecycle management of AI systems operating in GxP environments.
 
-    7.1.4 EU AI Act (Regulation (EU) 2024/1689): establishes a risk-based regulatory framework for artificial intelligence systems deployed within the European Union, including requirements for high-risk AI applications in life sciences.
+ISO/IEC 27001:2022 — Information Security Management Systems. Defines requirements for establishing, implementing, maintaining, and continually improving information security controls applicable to AI system infrastructure and data handling.
 
-    7.1.5 GAMP 5 (Second Edition, 2022) — A Risk-Based Approach to Compliant GxP Computerised Systems (ISPE): provides industry guidance on the application of risk-based approaches to the validation and lifecycle management of GxP computerised systems, including AI and machine learning systems.
+ITIL 4 — IT Service Management Framework. Provides best-practice guidance for IT service delivery, change management, incident management, and continual service improvement as applied to AI system operations.
 
-    7.1.6 FDA Guidance for Industry — Artificial Intelligence and Machine Learning in Software as a Medical Device (SaMD): provides regulatory expectations for the development, validation, and post-market monitoring of AI/ML-based software used in medical device applications.
+Sarbanes-Oxley Act (SOX) — Sections 302 and 404. Applies to AI systems supporting financial operations, including SAP and other applicable enterprise applications, with respect to internal controls over financial reporting.
 
-    7.1.7 Sarbanes-Oxley Act (SOX) — Sections 302 and 404: establishes internal control and financial reporting requirements applicable to systems such as SAP that support financial data processing and reporting.
+NIST AI Risk Management Framework (AI RMF 1.0) — National Institute of Standards and Technology. Provides a structured approach to identifying, assessing, and managing risks associated with the design, development, and deployment of AI systems.
 
-    7.1.8 ICH Q10 — Pharmaceutical Quality System: defines the pharmaceutical quality system model applicable across the product lifecycle, including the management of computerised systems and AI tools supporting GxP operations.
+EU Artificial Intelligence Act (Regulation (EU) 2024/1689). Establishes a risk-based regulatory framework for AI systems deployed within the European Union, including requirements for high-risk AI applications in life sciences and regulated industries.
 
-  7.2 Internal Policies and SOPs
+Internal Policies and Procedures:
 
-    7.2.1 GIT-SOP-00001 — Change Management SOP: governs the formal change control process that must be followed for all modifications to qualified systems, including AI systems and supporting infrastructure, consistent with requalification assessment requirements.
+GLBL-POL-00007 — Data Integrity Policy. Mandates data integrity requirements for all electronic records managed by or generated through AI systems in regulated contexts.
 
-    7.2.2 GLBL-POL-00007 — Data Integrity Policy: mandates data integrity controls for all electronic records, including AI-generated outputs, to ensure records are attributable, legible, contemporaneous, original, and accurate (ALCOA+).
+GLBL-POL-00050 — Secure Destruction of Confidential Documents. Applies to the secure disposal of AI-generated confidential outputs and associated records.
 
-    7.2.3 GLBL-POL-00078 — Retention, Transfer or Disposal of GxP Regulated Materials Policy: defines requirements for the retention, transfer, and disposal of GxP-regulated records and materials, including those produced or managed by AI systems.
+GLBL-POL-00078 — Retention, Transfer or Disposal of GxP Regulated Materials. Governs the lifecycle management of data outputs from AI systems used in regulated operations.
 
-    7.2.4 GLBL-POL-00050 — Secure Destruction of Confidential Documents Policy: establishes requirements for the secure destruction of confidential documents and data, applicable to AI system outputs and associated records at end of retention.
+GIT-SOP-00001 — Change Management Process (RFC Process). Defines the formal change control process that must be followed for all changes to AI system configurations, models, and supporting infrastructure prior to deployment.
 
-    7.2.5 Global Vendor Program SOP: requires formal vendor approval prior to the procurement or use of any AI tool, platform, or service in regulated operations, including assessment of vendor qualification and supply chain risk.
+GLBL-SOP-00080 — Access Control SOP. Establishes requirements for the management, control, and monitoring of access to AI systems and associated data assets.
 
-    7.2.6 Computer System Validation (CSV) SOP: defines the validation lifecycle requirements for GxP computerised systems, including AI-driven systems, encompassing Development Plan, peer review, qualification documentation, and SDLC controls.
+Global Vendor Program — Vendor Approval Policy. Requires that all vendors and vendor-supplied AI technologies receive formal approval prior to use in any organisational or regulated context.
 
-    7.2.7 Access Management and Annual Account Review SOP: mandates annual account access reviews for all qualified systems, including AI platforms, to ensure access rights remain appropriate and are documented in accordance with GxP requirements.
-
-    7.2.8 Configuration Management and CMDB SOP: requires that a Configuration Management Database (CMDB) entry be established and maintained for all qualified AI systems and infrastructure components upon acceptance into the production environment.
-
-  7.3 Standards and Frameworks (ISO, NIST, IEEE)
-
-    7.3.1 ISO/IEC 42001:2023 — Artificial Intelligence Management System: specifies requirements for establishing, implementing, maintaining, and continually improving an AI management system within organisations developing or using AI systems in regulated contexts.
-
-    7.3.2 ISO/IEC 27001:2022 — Information Security Management Systems: defines requirements for the establishment and operation of an information security management system, applicable to AI platforms, data pipelines, and supporting cloud infrastructure.
-
-    7.3.3 ISO/IEC 27701:2019 — Privacy Information Management: extends ISO/IEC 27001 to address privacy requirements for personally identifiable information (PII) processed by AI systems, including data used for model training and inference.
-
-    7.3.4 ISO 9001:2015 — Quality Management Systems: establishes quality management principles applicable to the development, deployment, and continuous improvement of AI systems used in life sciences operations.
-
-    7.3.5 NIST AI Risk Management Framework (AI RMF 1.0, 2023): provides a structured approach to identifying, assessing, and managing risks associated with AI systems across their full lifecycle, including governance, mapping, measurement, and management functions.
-
-    7.3.6 NIST Special Publication 800-53 (Revision 5) — Security and Privacy Controls for Information Systems and Organisations: defines security and privacy controls applicable to AI systems and supporting IT infrastructure operating in regulated environments.
-
-    7.3.7 NIST Special Publication 800-37 (Revision 2) — Risk Management Framework for Information Systems and Organisations: establishes a risk management framework for the categorisation, selection, implementation, and assessment of security controls for AI and IT systems.
-
-    7.3.8 IEEE 7000-2021 — Model Process for Addressing Ethical Concerns During System Design: provides a process framework for embedding ethical considerations, including transparency, fairness, and accountability, into the design and deployment of AI systems.
-
-    7.3.9 IEEE 7010-2020 — Recommended Practice for Assessing the Impact of Autonomous and Intelligent Systems on Human Well-Being: establishes recommended practices for evaluating the societal and human impact of AI systems deployed in regulated and public-facing contexts.
+Applicable AI System Qualification and Validation SOPs — All AI systems supporting regulated operations must be qualified and maintained in a validated state in accordance with the organisation's current qualification and validation SOPs, as aligned with GAMP 5 (Second Edition, 2022) and EU GMP Annex 11.
 
 8.0 REVISION HISTORY
 
 | Revision | Effective Date | Reason for Revision |
 |----------|---------------|---------------------|
-| 1.0 | 2025-01-01 | Initial release of the Standard Operating Procedure for Responsible AI Use in Global Technology. Establishes governance, qualification, change control, data integrity, and vendor approval requirements for AI systems used in GxP-aligned and regulated IT environments, consistent with 21 CFR Part 11, GAMP 5 (Second Edition, 2022), EU GMP Annex 11, ISO/IEC 27001:2022, and applicable internal policies including GLBL-POL-00007, GLBL-POL-00078, GLBL-POL-00050, and GIT-SOP-00001. |
+| 1.0 | EFFECTIVE_DATE | Initial release of the Standard Operating Procedure for Responsible AI Use in Global Technology. Establishes requirements for GxP-aligned AI governance, risk-based qualification, access control, change management, data integrity, and vendor approval in life sciences and regulated IT environments. |
 
 ---
 
 | Field | Value |
 |---|---|
-| **Document ID** | {{document_id}} |
-| **Version** | {{version}} |
-| **Status** | {{status}} |
-| **Effective Date** | {{effective_date}} |
-| **Classification** | {{classification}} |
+| **Document ID** | SOP-20260416-1058 |
+| **Version** | 1.0 |
+| **Status** | CURRENT |
+| **Effective Date** | 16-Apr-2026 |
+| **Classification** | INTERNAL |
 
 *This document is controlled. Unauthorised reproduction is prohibited.*  
-*{{status}} — {{classification}}*  
+*CURRENT — INTERNAL*  
 *Always verify you are reading the current approved version before use.*
